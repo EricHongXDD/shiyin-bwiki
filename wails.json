@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "shiyin-bwiki",
+  "outputfilename": "Shiyin",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "EricHongXDD",
+    "email": ""
+  },
+  "info": {
+    "companyName": "EricHongXDD",
+    "productName": "拾音 Shiyin · BWIKI 语音下载器",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 EricHongXDD",
+    "comments": "Built with Go and Wails; assisted by OpenAI Codex."
+  }
+}

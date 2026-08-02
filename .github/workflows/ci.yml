@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Test and validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.23.x
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            pkg-config
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            echo "The following Go files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Check frontend syntax
+        run: node --check frontend/dist/app.js
+
+      - name: Run vet
+        run: go vet -tags webkit2_41 ./...
+
+      - name: Run tests with race detector
+        run: go test -tags webkit2_41 -race ./... -count=1
+
+      - name: Verify generated icon is reproducible
+        shell: bash
+        run: |
+          go run ./tools/icon -output "$RUNNER_TEMP/appicon.png"
+          cmp build/appicon.png "$RUNNER_TEMP/appicon.png"
+
+      - name: Verify release version preparation
+        shell: bash
+        run: |
+          cp wails.json "$RUNNER_TEMP/wails.json"
+          go run ./tools/releaseprep -version 1.2.3 -config "$RUNNER_TEMP/wails.json"
+          test "$(jq -r '.info.productVersion' "$RUNNER_TEMP/wails.json")" = "1.2.3"

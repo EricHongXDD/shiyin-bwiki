@@ -1,0 +1,362 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version used by this build-only validation run
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WAILS_VERSION: v2.11.0
+
+jobs:
+  prepare:
+    name: Validate release version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - name: Validate semantic version
+        id: version
+        shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          version="${CANDIDATE_VERSION#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use the form X.Y.Z or vX.Y.Z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows x64
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.23.x
+          cache: true
+
+      - name: Install Wails CLI
+        shell: pwsh
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$env:WAILS_VERSION"
+          "$(go env GOPATH)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Apply release version
+        shell: pwsh
+        run: go run ./tools/releaseprep -version "$env:VERSION"
+
+      - name: Test
+        shell: pwsh
+        run: go test ./... -count=1
+
+      - name: Build application
+        shell: pwsh
+        run: wails build -clean -trimpath -platform windows/amd64 -ldflags "-X main.appVersion=$env:VERSION"
+
+      - name: Validate Windows metadata
+        shell: pwsh
+        run: |
+          $metadata = (Get-Item -LiteralPath "build\bin\Shiyin.exe").VersionInfo
+          if ($metadata.ProductVersion -ne $env:VERSION) {
+            throw "Unexpected ProductVersion: $($metadata.ProductVersion)"
+          }
+          if ($metadata.FileVersion -ne $env:VERSION) {
+            throw "Unexpected FileVersion: $($metadata.FileVersion)"
+          }
+          if ($metadata.ProductName -ne "拾音 Shiyin · BWIKI 语音下载器") {
+            throw "Unexpected ProductName: $($metadata.ProductName)"
+          }
+
+      - name: Package portable archive
+        shell: pwsh
+        run: |
+          $archiveName = "Shiyin-$env:RELEASE_TAG-windows-amd64"
+          $packageRoot = Join-Path $env:RUNNER_TEMP $archiveName
+          New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
+          Copy-Item -LiteralPath "build\bin\Shiyin.exe" -Destination $packageRoot
+          Copy-Item -LiteralPath "README.md" -Destination $packageRoot
+          Copy-Item -LiteralPath "LICENSE" -Destination $packageRoot
+          New-Item -ItemType Directory -Path "dist" -Force | Out-Null
+          Compress-Archive -Path "$packageRoot\*" -DestinationPath "dist\$archiveName.zip" -CompressionLevel Optimal
+          if ((Get-Item -LiteralPath "dist\$archiveName.zip").Length -lt 1MB) {
+            throw "Windows archive is unexpectedly small"
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-windows
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  macos:
+    name: macOS universal
+    needs: prepare
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.23.x
+          cache: true
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Apply release version
+        run: go run ./tools/releaseprep -version "$VERSION"
+
+      - name: Test
+        run: go test ./... -count=1
+
+      - name: Build application
+        run: wails build -clean -trimpath -platform darwin/universal -ldflags "-X main.appVersion=$VERSION"
+
+      - name: Validate and package application
+        shell: bash
+        run: |
+          plutil -lint build/bin/Shiyin.app/Contents/Info.plist
+          test "$(plutil -extract CFBundleShortVersionString raw build/bin/Shiyin.app/Contents/Info.plist)" = "$VERSION"
+          test "$(plutil -extract CFBundleIdentifier raw build/bin/Shiyin.app/Contents/Info.plist)" = "io.github.erichongxdd.shiyin-bwiki"
+          architectures="$(lipo -archs build/bin/Shiyin.app/Contents/MacOS/Shiyin)"
+          [[ "$architectures" == *"x86_64"* && "$architectures" == *"arm64"* ]]
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/bin/Shiyin.app \
+            "dist/Shiyin-$RELEASE_TAG-macos-universal.zip"
+          test -s "dist/Shiyin-$RELEASE_TAG-macos-universal.zip"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-macos
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  linux:
+    name: Linux x64
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.23.x
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            pkg-config
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$WAILS_VERSION"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Apply release version
+        run: go run ./tools/releaseprep -version "$VERSION"
+
+      - name: Test
+        run: go test -tags webkit2_41 ./... -count=1
+
+      - name: Build application
+        run: wails build -clean -trimpath -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.appVersion=$VERSION"
+
+      - name: Validate and package application
+        shell: bash
+        run: |
+          file build/bin/Shiyin | grep -q "ELF 64-bit"
+          if ldd build/bin/Shiyin | grep -q "not found"; then
+            ldd build/bin/Shiyin
+            exit 1
+          fi
+          package_name="Shiyin-$RELEASE_TAG-linux-amd64"
+          package_root="$RUNNER_TEMP/$package_name"
+          mkdir -p "$package_root" dist
+          install -m 0755 build/bin/Shiyin "$package_root/Shiyin"
+          install -m 0644 build/appicon.png "$package_root/shiyin.png"
+          install -m 0644 packaging/linux/shiyin.desktop "$package_root/shiyin.desktop"
+          install -m 0644 README.md LICENSE "$package_root/"
+          tar -czf "dist/$package_name.tar.gz" -C "$RUNNER_TEMP" "$package_name"
+          tar -tzf "dist/$package_name.tar.gz" >/dev/null
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  bundle:
+    name: Validate release bundle
+    needs:
+      - prepare
+      - windows
+      - macos
+      - linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: platform-*
+          path: dist
+          merge-multiple: true
+
+      - name: Validate archives and checksums
+        shell: bash
+        run: |
+          windows="dist/Shiyin-$RELEASE_TAG-windows-amd64.zip"
+          macos="dist/Shiyin-$RELEASE_TAG-macos-universal.zip"
+          linux="dist/Shiyin-$RELEASE_TAG-linux-amd64.tar.gz"
+          test -s "$windows"
+          test -s "$macos"
+          test -s "$linux"
+          unzip -t "$windows"
+          unzip -t "$macos"
+          tar -tzf "$linux" >/dev/null
+          cd dist
+          sha256sum \
+            "Shiyin-$RELEASE_TAG-windows-amd64.zip" \
+            "Shiyin-$RELEASE_TAG-macos-universal.zip" \
+            "Shiyin-$RELEASE_TAG-linux-amd64.tar.gz" \
+            > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Upload validated release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-bundle
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push'
+    needs:
+      - prepare
+      - bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: release-bundle
+          path: dist
+
+      - name: Create or update release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "拾音 Shiyin $RELEASE_TAG"
+          fi
+
+      - name: Verify uploaded assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected="$({
+            printf '%s\n' "SHA256SUMS.txt"
+            printf '%s\n' "Shiyin-$RELEASE_TAG-linux-amd64.tar.gz"
+            printf '%s\n' "Shiyin-$RELEASE_TAG-macos-universal.zip"
+            printf '%s\n' "Shiyin-$RELEASE_TAG-windows-amd64.zip"
+          } | sort)"
+          actual="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name' | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Unexpected release asset set"
+            echo "Expected:"
+            printf '%s\n' "$expected"
+            echo "Actual:"
+            printf '%s\n' "$actual"
+            exit 1
+          fi
+
+          verify_dir="$RUNNER_TEMP/release-check"
+          mkdir -p "$verify_dir"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$verify_dir"
+          cd "$verify_dir"
+          sha256sum --check SHA256SUMS.txt

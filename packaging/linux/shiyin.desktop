@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=拾音 Shiyin
+Comment=跨平台 BWIKI 语音下载器
+Exec=Shiyin
+Icon=shiyin
+Terminal=false
+Categories=AudioVideo;Utility;
+Keywords=BWIKI;Voice;Audio;Download;

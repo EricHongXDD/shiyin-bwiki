@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f7fb">
+  <meta name="description" content="拾音 Shiyin：支持多语言与场景筛选、批量下载和断点续传的跨平台 BWIKI 语音下载器。">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <title>拾音 Shiyin · BWIKI 语音下载器</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- 图标采用内联 SVG，确保离线运行时不依赖任何网络资源。 -->
+  <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 14v-4m4 8V6m4 15V3m4 15V6m4 8v-4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 12 20l1.15-1.15"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.2 2.47 3.25 5.47 3.16 9-.09 3.53-1.14 6.53-3.16 9-2.02-2.47-3.07-5.47-3.16-9C8.75 8.47 9.8 5.47 12 3Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 9 5 5 5-5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M4 20h16"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5Z"/></symbol>
+    <symbol id="i-tasks" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4.1 2.8 17a2 2 0 0 0 1.73 3h14.94a2 2 0 0 0 1.73-3L13.7 4.1a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 6 9 6-9 6Z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 7v10M15 7v10"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8a7 7 0 0 1 11.5-1L20 12M4 12l2.4 5a7 7 0 0 0 11.5-1"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7M10 11v5m4-5v5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9h6v6H9z"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 5h5v5m0-5-8 8"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4ZM18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a1 1 0 0 1-1-1Zm16 0h-3v6h2a1 1 0 0 0 1-1Z"/></symbol>
+  </svg>
+
+  <div class="app-shell" id="appShell">
+    <header class="app-header">
+      <a class="brand" href="#" aria-label="拾音首页">
+        <span class="brand-mark"><svg aria-hidden="true"><use href="#i-wave"></use></svg></span>
+        <span class="brand-copy">
+          <strong>拾音</strong>
+          <span>BWIKI 语音下载器</span>
+        </span>
+      </a>
+      <div class="header-actions">
+        <span class="version-badge" id="versionBadge">本地应用</span>
+        <button class="button button-secondary task-drawer-trigger" id="taskDrawerTrigger" type="button" aria-controls="taskPanel" aria-expanded="false">
+          <svg aria-hidden="true"><use href="#i-tasks"></use></svg>
+          下载任务
+          <span class="count-badge" id="headerTaskCount">0</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="source-panel surface">
+        <div class="source-heading">
+          <div>
+            <span class="eyebrow"><svg aria-hidden="true"><use href="#i-spark"></use></svg> 从页面开始</span>
+            <h1>把喜欢的角色语音，轻松收进本地</h1>
+            <p>粘贴 BWIKI 语音台词页链接，自动识别同一句台词的多语言配音。</p>
+          </div>
+          <div class="source-decoration" aria-hidden="true">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+
+        <form class="url-form" id="urlForm" novalidate>
+          <label class="url-field" for="urlInput">
+            <svg aria-hidden="true"><use href="#i-link"></use></svg>
+            <input id="urlInput" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://wiki.biligame.com/…/语音台词" aria-describedby="urlHint">
+            <button class="icon-button input-clear" id="clearUrlButton" type="button" aria-label="清空链接" hidden>
+              <svg aria-hidden="true"><use href="#i-x"></use></svg>
+            </button>
+          </label>
+          <button class="button button-primary parse-button" id="parseButton" type="submit">
+            <span>解析页面</span>
+            <svg aria-hidden="true"><use href="#i-arrow"></use></svg>
+          </button>
+        </form>
+        <p class="field-hint" id="urlHint">支持 wiki.biligame.com 的角色语音台词页面</p>
+        <div class="parse-feedback" id="parseFeedback" role="status" aria-live="polite"></div>
+      </section>
+
+      <div class="workspace">
+        <section class="results-panel surface" aria-labelledby="resultsTitle">
+          <div class="panel-heading results-heading">
+            <div class="heading-copy">
+              <div class="title-line">
+                <h2 id="resultsTitle">语音列表</h2>
+                <span class="soft-count" id="resultCount">等待解析</span>
+              </div>
+              <p id="pageSubtitle">解析页面后，可以搜索、试听并按语言批量选择。</p>
+            </div>
+          </div>
+
+          <div class="warning-stack" id="warningStack"></div>
+
+          <div class="results-toolbar" id="resultsToolbar">
+            <label class="search-field" for="searchInput">
+              <svg aria-hidden="true"><use href="#i-search"></use></svg>
+              <input id="searchInput" type="search" autocomplete="off" placeholder="搜索台词、分类或文件名" disabled>
+              <kbd>⌘ K</kbd>
+            </label>
+
+            <div class="language-picker" id="languagePicker">
+              <button class="button button-secondary language-trigger" id="languageTrigger" type="button" aria-controls="languageMenu" aria-expanded="false" disabled>
+                <svg aria-hidden="true"><use href="#i-globe"></use></svg>
+                <span id="languageSummary">全部语言</span>
+                <svg class="chevron" aria-hidden="true"><use href="#i-chevron"></use></svg>
+              </button>
+              <div class="language-menu" id="languageMenu" role="group" aria-labelledby="languageTrigger" hidden></div>
+            </div>
+
+            <div class="scene-picker" id="scenePicker">
+              <button class="button button-secondary scene-trigger" id="sceneTrigger" type="button" aria-controls="sceneMenu" aria-expanded="false" disabled>
+                <svg aria-hidden="true"><use href="#i-filter"></use></svg>
+                <span id="sceneSummary">全部场景</span>
+                <svg class="chevron" aria-hidden="true"><use href="#i-chevron"></use></svg>
+              </button>
+              <div class="scene-menu" id="sceneMenu" role="group" aria-labelledby="sceneTrigger" hidden></div>
+            </div>
+          </div>
+
+          <div class="selection-bar" id="selectionBar" hidden>
+            <label class="check-control select-all-control">
+              <input id="selectAllCheckbox" type="checkbox">
+              <span class="custom-check" aria-hidden="true"></span>
+              <span id="selectAllLabel">全选当前结果</span>
+            </label>
+            <div class="selection-summary">
+              <span id="selectedSummary">已选择 0 条语音</span>
+              <button class="text-button" id="clearHiddenSelection" type="button" hidden></button>
+              <button class="text-button" id="clearSelection" type="button">取消选择</button>
+              <button class="button button-primary button-compact" id="batchDownloadButton" type="button">
+                <svg aria-hidden="true"><use href="#i-download"></use></svg>
+                <span id="batchDownloadLabel">下载所选</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="content-state" id="contentState">
+            <div class="empty-state welcome-state">
+              <div class="empty-visual" aria-hidden="true">
+                <span><svg><use href="#i-headphones"></use></svg></span>
+                <i class="note-one">♪</i><i class="note-two">♫</i>
+              </div>
+              <h3>还没有语音内容</h3>
+              <p>在上方粘贴页面链接并开始解析，结果会显示在这里。</p>
+            </div>
+          </div>
+          <div class="voice-list" id="voiceList"></div>
+        </section>
+
+        <aside class="tasks-panel surface" id="taskPanel" aria-labelledby="tasksTitle">
+          <div class="tasks-drag-handle" aria-hidden="true"></div>
+          <div class="panel-heading tasks-heading">
+            <div class="title-line">
+              <h2 id="tasksTitle">下载批次</h2>
+              <span class="count-badge large" id="taskCount">0</span>
+            </div>
+            <div class="task-heading-actions">
+              <button class="text-button" id="clearCompletedButton" type="button" hidden>清除已完成</button>
+              <button class="icon-button close-drawer" id="closeTaskDrawer" type="button" aria-label="关闭任务面板">
+                <svg aria-hidden="true"><use href="#i-x"></use></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="directory-card">
+            <span class="directory-icon"><svg aria-hidden="true"><use href="#i-folder"></use></svg></span>
+            <div class="directory-copy">
+              <span>保存到</span>
+              <strong id="directoryPath" title="">尚未选择下载目录</strong>
+            </div>
+            <button class="button button-ghost button-compact" id="chooseDirectoryButton" type="button">更改</button>
+          </div>
+
+          <div class="task-overview" id="taskOverview" hidden></div>
+          <div class="task-batch-view" id="taskBatchView">
+            <div class="task-list batch-list" id="taskList">
+              <div class="tasks-empty">
+                <span><svg aria-hidden="true"><use href="#i-download"></use></svg></span>
+                <h3>暂无下载批次</h3>
+                <p>每次下载会汇总为一个批次，点击批次可查看语音明细。</p>
+              </div>
+            </div>
+          </div>
+          <section class="task-detail-view" id="taskDetailView" aria-labelledby="batchDetailTitle" hidden>
+            <div class="batch-detail-heading">
+              <button class="icon-button batch-back-button" id="batchBackButton" type="button" aria-label="返回下载批次">
+                <svg aria-hidden="true"><use href="#i-arrow"></use></svg>
+              </button>
+              <div>
+                <h3 id="batchDetailTitle">批次详情</h3>
+                <p id="batchDetailMeta"></p>
+              </div>
+            </div>
+            <div class="task-status-filters" id="taskStatusFilters" role="group" aria-label="按下载状态筛选"></div>
+            <div class="task-list batch-task-list" id="batchTaskList"></div>
+            <div class="task-pagination" id="taskPagination" hidden></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div class="drawer-scrim" id="drawerScrim" hidden></div>
+
+  <div class="bridge-banner" id="bridgeBanner" hidden role="alert">
+    <svg aria-hidden="true"><use href="#i-info"></use></svg>
+    <div>
+      <strong>请在“拾音”桌面应用中运行</strong>
+      <span>当前页面未连接 Wails 后端，解析和下载功能不可用。</span>
+    </div>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
