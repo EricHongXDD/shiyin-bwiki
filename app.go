@@ -24,7 +24,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.0.0-dev"
+var appVersion = "1.1.0-dev"
 
 // App 是前端可调用的应用服务边界。
 type App struct {
@@ -63,6 +63,7 @@ type ErrorDTO struct {
 // PageDTO 是面向界面的稳定数据模型，与页面 DOM 细节解耦。
 type PageDTO struct {
 	Title     string        `json:"title"`
+	RoleName  string        `json:"roleName"`
 	SourceURL string        `json:"sourceUrl"`
 	Entries   []EntryDTO    `json:"entries"`
 	Languages []LanguageDTO `json:"languages"`
@@ -93,10 +94,12 @@ type LanguageDTO struct {
 
 type QueueRequest struct {
 	Directory string              `json:"directory"`
+	RoleName  string              `json:"roleName"`
 	Items     []QueueDownloadItem `json:"items"`
 }
 
 type QueueDownloadItem struct {
+	Type         string `json:"type,omitempty"`
 	SourceID     string `json:"sourceId"`
 	Title        string `json:"title"`
 	Category     string `json:"category"`
@@ -104,6 +107,7 @@ type QueueDownloadItem struct {
 	LanguageName string `json:"languageName"`
 	FileName     string `json:"fileName"`
 	URL          string `json:"url"`
+	Content      string `json:"content,omitempty"`
 }
 
 func NewApp() (*App, error) {
@@ -212,17 +216,27 @@ func (a *App) QueueDownloads(request QueueRequest) ([]download.Task, error) {
 	if len(request.Items) == 0 {
 		return nil, errors.New("请至少选择一条语音")
 	}
-	if len(request.Items) > 5000 {
-		return nil, errors.New("一次最多添加 5000 条下载任务")
+	if len(request.Items) > 10000 {
+		return nil, errors.New("一次最多添加 10000 条下载任务")
 	}
 
+	roleName := strings.TrimSpace(request.RoleName)
 	items := make([]download.NewTask, 0, len(request.Items))
 	for _, item := range request.Items {
-		u, err := url.Parse(item.URL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			return nil, fmt.Errorf("音频“%s”的下载地址无效", item.FileName)
+		taskType := strings.ToLower(strings.TrimSpace(item.Type))
+		if taskType == "" {
+			taskType = download.TaskTypeAudio
+		}
+		if taskType == download.TaskTypeAudio {
+			u, err := url.Parse(item.URL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+				return nil, fmt.Errorf("音频“%s”的下载地址无效", item.FileName)
+			}
+		} else if taskType != download.TaskTypeText {
+			return nil, fmt.Errorf("文件“%s”的任务类型无效", item.FileName)
 		}
 		items = append(items, download.NewTask{
+			Type:         taskType,
 			SourceID:     item.SourceID,
 			Title:        item.Title,
 			Category:     item.Category,
@@ -231,6 +245,8 @@ func (a *App) QueueDownloads(request QueueRequest) ([]download.Task, error) {
 			FileName:     item.FileName,
 			URL:          item.URL,
 			Directory:    directory,
+			Subdirectory: roleName,
+			Content:      item.Content,
 		})
 	}
 	a.directoryMu.Lock()
@@ -325,6 +341,7 @@ func mapPage(page bwiki.Page) PageDTO {
 	}
 	dto := PageDTO{
 		Title:     title,
+		RoleName:  roleNameFromTitle(title),
 		SourceURL: page.SourceURL,
 		Entries:   make([]EntryDTO, 0, len(page.Entries)),
 		Languages: make([]LanguageDTO, 0, 4),
@@ -376,6 +393,23 @@ func mapPage(page bwiki.Page) PageDTO {
 		return left < right
 	})
 	return dto
+}
+
+func roleNameFromTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if index := strings.IndexAny(title, "/／"); index >= 0 {
+		if roleName := strings.TrimSpace(title[:index]); roleName != "" {
+			return roleName
+		}
+	}
+	for _, suffix := range []string{"语音台词页", "语音台词", "语音"} {
+		if strings.HasSuffix(title, suffix) {
+			if roleName := strings.TrimSpace(strings.TrimSuffix(title, suffix)); roleName != "" {
+				return roleName
+			}
+		}
+	}
+	return title
 }
 
 func mapParseError(err error) *ErrorDTO {

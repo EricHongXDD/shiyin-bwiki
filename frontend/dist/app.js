@@ -20,6 +20,7 @@
     taskById: new Map(),
     taskOrder: 0,
     downloadDirectory: "",
+    includeSubtitles: true,
     currentAudio: null,
     currentAudioKey: "",
     audioLoadingKey: "",
@@ -228,12 +229,26 @@
       "warningStack", "resultsToolbar", "searchInput", "languagePicker", "languageTrigger",
       "languageSummary", "languageMenu", "scenePicker", "sceneTrigger", "sceneSummary", "sceneMenu",
       "selectionBar", "selectAllCheckbox", "selectAllLabel",
-      "selectedSummary", "clearHiddenSelection", "clearSelection", "batchDownloadButton", "batchDownloadLabel", "contentState",
+      "selectedSummary", "clearHiddenSelection", "clearSelection", "includeSubtitlesCheckbox", "batchDownloadButton", "batchDownloadLabel", "contentState",
       "voiceList", "taskPanel", "taskCount", "clearCompletedButton", "closeTaskDrawer", "directoryPath",
       "chooseDirectoryButton", "taskOverview", "taskBatchView", "taskList", "taskDetailView", "batchBackButton",
       "batchDetailTitle", "batchDetailMeta", "taskStatusFilters", "batchTaskList", "taskPagination",
       "drawerScrim", "bridgeBanner", "toastRegion",
     ].forEach((id) => { elements[id] = byId(id); });
+  }
+
+  function inferRoleName(title) {
+    const text = displayText(title);
+    const separatorIndex = text.search(/[\/／]/);
+    if (separatorIndex >= 0 && text.slice(0, separatorIndex).trim()) {
+      return text.slice(0, separatorIndex).trim();
+    }
+    for (const suffix of ["语音台词页", "语音台词", "语音"]) {
+      if (text.endsWith(suffix) && text.slice(0, -suffix.length).trim()) {
+        return text.slice(0, -suffix.length).trim();
+      }
+    }
+    return text;
   }
 
   function normalizePage(rawPage) {
@@ -315,8 +330,10 @@
       countedScenes.set(key, current);
     });
 
+    const title = displayText(raw.title, "BWIKI 语音页面");
     return {
-      title: displayText(raw.title, "BWIKI 语音页面"),
+      title,
+      roleName: displayText(raw.roleName, inferRoleName(title)),
       sourceUrl: displayText(raw.sourceUrl),
       entries: normalizedEntries,
       languages,
@@ -337,18 +354,26 @@
     }
   }
 
-  function queueItemFromVariant(variant) {
+  function subtitleFileName(fileName) {
+    const text = displayText(fileName, "语音.mp3");
+    const extensionIndex = text.lastIndexOf(".");
+    return (extensionIndex > 0 ? text.slice(0, extensionIndex) : text) + ".txt";
+  }
+
+  function queueItemFromVariant(variant, type = "audio") {
+    const isText = type === "text";
     return {
-      id: variant.id,
-      sourceId: variant.id,
+      type,
+      id: isText ? variant.id + ":text" : variant.id,
+      sourceId: isText ? variant.id + ":text" : variant.id,
       entryId: variant._entryId,
       category: variant._category,
       title: variant._entryTitle,
       language: variant.language,
       languageName: variant.languageName,
-      transcript: variant.transcript,
-      fileName: variant.fileName,
-      url: variant.url,
+      fileName: isText ? subtitleFileName(variant.fileName) : variant.fileName,
+      url: isText ? "" : variant.url,
+      content: isText ? variant.transcript : "",
     };
   }
 
@@ -378,6 +403,7 @@
     state.page = normalizePage(page);
     state.selected.clear();
     state.query = "";
+    state.includeSubtitles = true;
     elements.searchInput.value = "";
     state.languageCodes = new Set(state.page.languages.map((language) => language.code));
     state.sceneKeys = new Set(state.page.scenes.map((scene) => scene.key));
@@ -542,7 +568,7 @@
     const variants = visibleVariants(groups);
     const allCount = state.page.entries.reduce((sum, entry) => sum + entry.variants.length, 0);
     elements.resultCount.textContent = `${groups.length} 句 · ${variants.length} 条`;
-    elements.pageSubtitle.textContent = `${state.page.title} · 共识别 ${state.page.entries.length} 句、${allCount} 条配音`;
+    elements.pageSubtitle.textContent = `${state.page.title} · 共识别 ${state.page.entries.length} 句、${allCount} 条配音 · 下载到文件夹“${state.page.roleName}”`;
     elements.contentState.innerHTML = "";
     elements.selectionBar.hidden = variants.length === 0 && state.selected.size === 0;
 
@@ -588,7 +614,8 @@
             </div>
             <div class="variant-actions">
               ${variant.transcript ? `<button class="icon-button" type="button" data-action="copy" data-key="${escapeHTML(variant._key)}" aria-label="复制台词" title="复制台词">${icon("copy")}</button>` : ""}
-              <button class="icon-button download-one" type="button" data-action="download-one" data-key="${escapeHTML(variant._key)}" aria-label="下载这条语音" title="下载这条语音" ${variant.url ? "" : "disabled"}>${icon("download")}</button>
+              ${variant.transcript ? `<button class="icon-button download-text" type="button" data-action="download-text" data-key="${escapeHTML(variant._key)}" aria-label="下载字幕" title="下载字幕（${escapeHTML(subtitleFileName(variant.fileName))}）">${icon("file-text")}</button>` : ""}
+              <button class="icon-button download-one" type="button" data-action="download-one" data-key="${escapeHTML(variant._key)}" aria-label="下载语音" title="下载语音（可同时下载字幕）" ${variant.url ? "" : "disabled"}>${icon("download")}</button>
             </div>
           </div>`;
       }).join("");
@@ -628,6 +655,7 @@
     elements.selectAllCheckbox.disabled = visible.length === 0;
     elements.selectAllLabel.textContent = elements.selectAllCheckbox.checked ? "取消全选当前结果" : "全选当前结果";
     elements.selectedSummary.textContent = `已选择 ${totalSelected} 条语音`;
+    elements.includeSubtitlesCheckbox.checked = state.includeSubtitles;
     elements.clearHiddenSelection.hidden = hiddenSelected === 0;
     elements.clearHiddenSelection.textContent = `清除隐藏的 ${hiddenSelected} 条`;
     elements.clearSelection.hidden = totalSelected === 0;
@@ -1047,8 +1075,16 @@
   }
 
   async function queueDownloads(variants, options = {}) {
-    const valid = variants.filter((variant) => variant?.url);
-    if (!valid.length) {
+    const candidates = Array.isArray(variants) ? variants : [];
+    const textOnly = options.textOnly === true;
+    const audioVariants = textOnly ? [] : candidates.filter((variant) => variant?.url);
+    const subtitleCandidates = textOnly ? candidates : audioVariants;
+    const subtitleVariants = subtitleCandidates.filter((variant) => variant?.transcript);
+    if (textOnly && !subtitleVariants.length) {
+      showToast("没有可下载的字幕", "所选语音没有可用的台词文本。", "warning");
+      return;
+    }
+    if (!textOnly && !audioVariants.length) {
       showToast("没有可下载的语音", "所选内容缺少有效的音频地址。", "warning");
       return;
     }
@@ -1056,15 +1092,25 @@
     const button = options.button;
     if (button) button.disabled = true;
     try {
-      const items = valid.map(queueItemFromVariant);
+      const audioItems = textOnly ? [] : audioVariants.map((variant) => queueItemFromVariant(variant));
+      const includeSubtitles = !textOnly && (options.includeSubtitles ?? state.includeSubtitles);
+      const subtitleItems = includeSubtitles || textOnly
+        ? subtitleVariants.map((variant) => queueItemFromVariant(variant, "text"))
+        : [];
+      const items = audioItems.concat(subtitleItems);
       const response = await state.api.QueueDownloads({
         directory: state.downloadDirectory,
+        roleName: state.page?.roleName || "",
         items,
       });
       const tasks = unwrapTasks(response);
-	  tasks.forEach((task) => upsertTask(task, false));
+      tasks.forEach((task) => upsertTask(task, false));
       renderTasks();
-      showToast("已创建下载批次", `${items.length} 条语音正在等待下载。`, "success");
+      showToast(
+        textOnly ? "已创建字幕下载批次" : "已创建下载批次",
+        "共 " + items.length + " 个文件正在等待下载。",
+        "success",
+      );
       if (options.clearSelection) {
         state.selected.clear();
         renderResults();
@@ -1123,6 +1169,7 @@
       id,
       batchId: displayText(raw.batchId ?? raw.batchID ?? raw.groupId, previous?.batchId),
       status,
+      type: displayText(raw.type, previous?.type || "audio"),
       title: displayText(raw.title || raw.entryTitle || raw.displayName, previous?.title || "语音下载"),
       category: displayText(raw.category, previous?.category),
       fileName: displayText(raw.fileName || raw.filename || raw.name, previous?.fileName || "正在准备文件…"),
@@ -1306,11 +1353,11 @@
         ? `${formatBytes(task.downloadedBytes)} / ${formatBytes(task.totalBytes)}`
         : (task.status === "queued" ? "等待获取文件大小" : formatBytes(task.downloadedBytes));
       const speedText = task.status === "running" && task.speed > 0 ? `${formatBytes(task.speed)}/s` : `${Math.round(task.progress)}%`;
-      const subtitle = [task.languageName, task.category, task.title].filter(Boolean).join(" · ");
+      const subtitle = [task.type === "text" ? "字幕" : task.languageName, task.category, task.title].filter(Boolean).join(" · ");
       return `
         <article class="task-card task-item-card${activeClass}${failedClass}${completedClass}" data-task-card="${escapeHTML(task.id)}">
           <div class="task-card-head">
-            <span class="task-file-icon">${icon("wave")}</span>
+            <span class="task-file-icon">${icon(task.type === "text" ? "file-text" : "wave")}</span>
             <div class="task-copy">
               <strong title="${escapeHTML(task.fileName)}">${escapeHTML(task.fileName)}</strong>
               <span title="${escapeHTML(subtitle)}">${escapeHTML(subtitle || "BWIKI 语音")}</span>
@@ -1615,6 +1662,10 @@
       const key = target.dataset.key;
       if (action === "play") toggleAudio(key);
       if (action === "copy") copyTranscript(key);
+      if (action === "download-text") {
+        const variant = state.allVariants.get(key);
+        if (variant) queueDownloads([variant], { textOnly: true, button: target });
+      }
       if (action === "download-one") {
         const variant = state.allVariants.get(key);
         if (variant) queueDownloads([variant], { button: target });
@@ -1640,6 +1691,10 @@
       button: elements.batchDownloadButton,
       clearSelection: true,
     }));
+
+    elements.includeSubtitlesCheckbox.addEventListener("change", () => {
+      state.includeSubtitles = elements.includeSubtitlesCheckbox.checked;
+    });
 
     elements.chooseDirectoryButton.addEventListener("click", chooseDirectory);
     elements.clearCompletedButton.addEventListener("click", clearCompletedTasks);

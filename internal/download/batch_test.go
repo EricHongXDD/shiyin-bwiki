@@ -102,3 +102,37 @@ func TestLegacyStateWithoutBatchIDLoads(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 }
+
+func TestTextTaskWritesUTF8IntoSubdirectory(t *testing.T) {
+	directory := t.TempDir()
+	manager := newTestManager(t, Config{StatePath: filepath.Join(directory, "state.json"), Concurrency: 1})
+	defer manager.Close()
+
+	content := "你好，明。\r\n这是对应的语音台词。"
+	task, err := manager.Add(NewTask{
+		Type:         TaskTypeText,
+		FileName:     "明语音-022CN.txt",
+		Directory:    directory,
+		Subdirectory: "明",
+		Content:      content,
+	})
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	waitTaskStatus(t, manager, task.ID, StatusCompleted)
+
+	expectedDirectory := filepath.Join(directory, "明")
+	if task.Directory != expectedDirectory {
+		t.Fatalf("任务目录 = %q，期望 %q", task.Directory, expectedDirectory)
+	}
+	data, err := os.ReadFile(filepath.Join(expectedDirectory, "明语音-022CN.txt"))
+	if err != nil {
+		t.Fatalf("读取字幕文件失败：%v", err)
+	}
+	if string(data) != content {
+		t.Fatalf("字幕内容 = %q，期望 %q", string(data), content)
+	}
+	if _, err := os.Stat(task.OutputPath + ".part"); !os.IsNotExist(err) {
+		t.Fatalf("字幕临时文件未清理：err=%v", err)
+	}
+}

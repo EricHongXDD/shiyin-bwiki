@@ -112,15 +112,28 @@ func (m *Manager) load() (bool, error) {
 
 func validateLoadedTask(task Task) (Task, bool, error) {
 	changed := false
-	rawURL := strings.TrimSpace(task.URL)
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil {
-		return Task{}, false, errors.New("URL 不是安全的 HTTP 或 HTTPS 地址")
-	}
-	canonicalURL := parsedURL.String()
-	if task.URL != canonicalURL {
-		task.URL = canonicalURL
+	taskType := strings.ToLower(strings.TrimSpace(task.Type))
+	if taskType == "" {
+		taskType = TaskTypeAudio
+		task.Type = taskType
 		changed = true
+	}
+	if taskType != TaskTypeAudio && taskType != TaskTypeText {
+		return Task{}, false, errors.New("任务类型无效")
+	}
+	if taskType == TaskTypeAudio {
+		rawURL := strings.TrimSpace(task.URL)
+		parsedURL, err := url.Parse(rawURL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil {
+			return Task{}, false, errors.New("URL 不是安全的 HTTP 或 HTTPS 地址")
+		}
+		canonicalURL := parsedURL.String()
+		if task.URL != canonicalURL {
+			task.URL = canonicalURL
+			changed = true
+		}
+	} else if len(task.Content) > maxTextContentBytes {
+		return Task{}, false, errors.New("字幕文本过大")
 	}
 
 	if strings.TrimSpace(task.Directory) == "" || !filepath.IsAbs(task.Directory) {

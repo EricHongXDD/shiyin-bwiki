@@ -53,7 +53,7 @@ func TestQueueDownloadsAssignsOneBatchPerCall(t *testing.T) {
 	defer manager.Close()
 	app := &App{downloads: manager, downloadDir: directory}
 
-	first, err := app.QueueDownloads(QueueRequest{Directory: directory, Items: []QueueDownloadItem{
+	first, err := app.QueueDownloads(QueueRequest{Directory: directory, RoleName: "明", Items: []QueueDownloadItem{
 		{FileName: "first-zh.mp3", URL: server.URL + "/zh"},
 		{FileName: "first-ja.mp3", URL: server.URL + "/ja"},
 	}})
@@ -65,6 +65,10 @@ func TestQueueDownloadsAssignsOneBatchPerCall(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatalf("第二次 QueueDownloads() error = %v", err)
+	}
+	expectedDirectory := filepath.Join(directory, "明")
+	if first[0].Directory != expectedDirectory || first[1].Directory != expectedDirectory {
+		t.Fatalf("角色子目录 = %q, %q，期望 %q", first[0].Directory, first[1].Directory, expectedDirectory)
 	}
 	if first[0].BatchID == "" || first[0].BatchID != first[1].BatchID {
 		t.Fatalf("同次调用返回了不同 BatchID：%q, %q", first[0].BatchID, first[1].BatchID)
@@ -93,5 +97,24 @@ func TestApplicationStateDirectoryKeepsLegacyData(t *testing.T) {
 	}
 	if got := applicationStateDirectory(configRoot); got != preferred {
 		t.Fatalf("新旧目录并存时选择 = %q，期望 %q", got, preferred)
+	}
+}
+
+func TestRoleNameFromTitle(t *testing.T) {
+	tests := []struct {
+		title string
+		want  string
+	}{
+		{title: "明/语音台词", want: "明"},
+		{title: "米雪儿·李／语音台词", want: "米雪儿·李"},
+		{title: "明语音台词", want: "明"},
+		{title: "自定义页面", want: "自定义页面"},
+	}
+	for _, test := range tests {
+		t.Run(test.title, func(t *testing.T) {
+			if got := roleNameFromTitle(test.title); got != test.want {
+				t.Fatalf("roleNameFromTitle(%q) = %q，期望 %q", test.title, got, test.want)
+			}
+		})
 	}
 }

@@ -19,6 +19,13 @@ const (
 	StatusCanceled    Status = "canceled"
 )
 
+const (
+	// TaskTypeAudio 表示从远端地址下载音频文件。
+	TaskTypeAudio = "audio"
+	// TaskTypeText 表示将 UTF-8 台词写入文本文件。
+	TaskTypeText = "text"
+)
+
 var (
 	ErrClosed            = errors.New("下载管理器已关闭")
 	ErrTaskNotFound      = errors.New("下载任务不存在")
@@ -38,6 +45,7 @@ type Config struct {
 
 // NewTask 是创建下载任务时需要的输入。
 type NewTask struct {
+	Type         string `json:"type,omitempty"`
 	SourceID     string `json:"sourceId"`
 	Title        string `json:"title"`
 	Category     string `json:"category"`
@@ -46,12 +54,15 @@ type NewTask struct {
 	FileName     string `json:"fileName"`
 	URL          string `json:"url"`
 	Directory    string `json:"directory"`
+	Subdirectory string `json:"subdirectory,omitempty"`
+	Content      string `json:"content,omitempty"`
 }
 
 // Task 是可直接用于界面展示和 JSON 持久化的下载任务 DTO。
 type Task struct {
 	ID           string     `json:"id"`
 	BatchID      string     `json:"batchId,omitempty"`
+	Type         string     `json:"type,omitempty"`
 	SourceID     string     `json:"sourceId"`
 	Title        string     `json:"title"`
 	Category     string     `json:"category"`
@@ -61,6 +72,7 @@ type Task struct {
 	URL          string     `json:"url"`
 	Directory    string     `json:"directory"`
 	OutputPath   string     `json:"outputPath"`
+	Content      string     `json:"content,omitempty"`
 	Status       Status     `json:"status"`
 	Bytes        int64      `json:"bytes"`
 	Total        int64      `json:"total"`

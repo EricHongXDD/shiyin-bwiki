@@ -59,6 +59,11 @@ func SanitizeFileName(name string) string {
 	return name
 }
 
+// SanitizeDirectoryName 将外部提供的角色名转换为单级安全目录名。
+func SanitizeDirectoryName(name string) string {
+	return SanitizeFileName(name)
+}
+
 func truncateUTF8(value string, maximum int) string {
 	if maximum <= 0 {
 		return ""

@@ -9,7 +9,7 @@ on:
       version:
         description: Version used by this build-only validation run
         required: true
-        default: "1.0.0"
+        default: "1.1.0"
 
 permissions:
   contents: read
