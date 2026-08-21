@@ -40,6 +40,9 @@ type Manager struct {
 	onUpdate         func(Task)
 	progressInterval time.Duration
 	closed           bool
+	concurrency      int
+	workerCount      int
+	retireWorkers    int
 	wg               sync.WaitGroup
 }
 
@@ -79,6 +82,8 @@ func NewManager(config Config) (*Manager, error) {
 		client:           client,
 		onUpdate:         config.OnUpdate,
 		progressInterval: interval,
+		concurrency:      concurrency,
+		workerCount:      concurrency,
 	}
 	m.cond = sync.NewCond(&m.mu)
 
@@ -97,6 +102,45 @@ func NewManager(config Config) (*Manager, error) {
 		go m.worker()
 	}
 	return m, nil
+}
+
+// SetConcurrency 动态调整下载 worker 数量；减少并发时会让空闲 worker 安全退出。
+func (m *Manager) SetConcurrency(concurrency int) error {
+	if concurrency <= 0 {
+		return errors.New("并发数必须大于 0")
+	}
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return ErrClosed
+	}
+	if concurrency == m.concurrency {
+		m.mu.Unlock()
+		return nil
+	}
+	m.concurrency = concurrency
+	if concurrency < m.workerCount {
+		m.retireWorkers = m.workerCount - concurrency
+		m.cond.Broadcast()
+		m.mu.Unlock()
+		return nil
+	}
+	m.retireWorkers = 0
+	additional := concurrency - m.workerCount
+	m.workerCount += additional
+	m.wg.Add(additional)
+	m.mu.Unlock()
+	for i := 0; i < additional; i++ {
+		go m.worker()
+	}
+	return nil
+}
+
+// Concurrency 返回当前下载 worker 数量。
+func (m *Manager) Concurrency() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.concurrency
 }
 
 // Add 创建单条下载任务。

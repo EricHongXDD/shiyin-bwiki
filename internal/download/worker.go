@@ -53,6 +53,11 @@ func (m *Manager) startNext() (string, Task, context.Context, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for {
+		if m.retireWorkers > 0 {
+			m.retireWorkers--
+			m.workerCount--
+			return "", Task{}, nil, false
+		}
 		for len(m.pending) == 0 && !m.closed {
 			m.cond.Wait()
 		}

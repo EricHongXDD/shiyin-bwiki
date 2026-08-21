@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,16 +26,54 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.2.1-dev"
+var appVersion = "1.3.0-dev"
+
+const (
+	defaultDownloadConcurrency = 4
+	minDownloadConcurrency     = 1
+	maxDownloadConcurrency     = 32
+	githubLatestReleaseURL     = "https://api.github.com/repos/EricHongXDD/shiyin-bwiki/releases/latest"
+)
+
+// AppSettings 保存桌面应用的用户设置。
+type AppSettings struct {
+	DownloadConcurrency int  `json:"downloadConcurrency"`
+	AutoCheckUpdates    bool `json:"autoCheckUpdates"`
+}
+
+// UpdateInfo 是 GitHub Release 更新检查结果。
+type UpdateInfo struct {
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl"`
+	DownloadURL     string `json:"downloadUrl"`
+	PublishedAt     string `json:"publishedAt,omitempty"`
+}
+
+type githubReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+type githubReleasePayload struct {
+	TagName     string               `json:"tag_name"`
+	HTMLURL     string               `json:"html_url"`
+	PublishedAt string               `json:"published_at"`
+	Assets      []githubReleaseAsset `json:"assets"`
+}
 
 // App 是前端可调用的应用服务边界。
 type App struct {
-	ctx         context.Context
-	parser      *bwiki.Parser
-	downloads   *download.Manager
-	downloadDir string
-	contextMu   sync.RWMutex
-	directoryMu sync.RWMutex
+	ctx          context.Context
+	parser       *bwiki.Parser
+	downloads    *download.Manager
+	downloadDir  string
+	settingsPath string
+	settings     AppSettings
+	contextMu    sync.RWMutex
+	directoryMu  sync.RWMutex
+	settingsMu   sync.RWMutex
 }
 
 // Bootstrap 是界面启动时需要的一次性状态。
@@ -41,6 +81,7 @@ type Bootstrap struct {
 	DownloadDirectory string          `json:"downloadDirectory"`
 	Tasks             []download.Task `json:"tasks"`
 	Version           string          `json:"version"`
+	Settings          AppSettings     `json:"settings"`
 }
 
 // ParseResponse 避免把可诊断错误压缩成一段普通字符串。
@@ -121,8 +162,15 @@ func NewApp() (*App, error) {
 	}
 
 	downloadDir := defaultDownloadDirectory()
+	settingsPath := filepath.Join(stateDir, "settings.json")
+	settings, err := loadAppSettings(settingsPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取应用设置失败：%w", err)
+	}
 	app := &App{
-		downloadDir: downloadDir,
+		downloadDir:  downloadDir,
+		settingsPath: settingsPath,
+		settings:     settings,
 		parser: bwiki.NewParser(bwiki.Config{
 			Client: &http.Client{Timeout: 50 * time.Second},
 			UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -133,7 +181,7 @@ func NewApp() (*App, error) {
 
 	manager, err := download.NewManager(download.Config{
 		StatePath:   filepath.Join(stateDir, "tasks.json"),
-		Concurrency: 4,
+		Concurrency: settings.DownloadConcurrency,
 		Client:      &http.Client{Timeout: 0},
 		OnUpdate:    app.onTaskUpdate,
 	})
@@ -166,7 +214,186 @@ func (a *App) GetBootstrap() Bootstrap {
 		DownloadDirectory: directory,
 		Tasks:             a.downloads.List(),
 		Version:           appVersion,
+		Settings:          a.currentSettings(),
 	}
+}
+
+func defaultAppSettings() AppSettings {
+	return AppSettings{
+		DownloadConcurrency: defaultDownloadConcurrency,
+		AutoCheckUpdates:    true,
+	}
+}
+
+func loadAppSettings(path string) (AppSettings, error) {
+	settings := defaultAppSettings()
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return settings, nil
+	}
+	if err != nil {
+		return settings, err
+	}
+	var stored struct {
+		DownloadConcurrency *int  `json:"downloadConcurrency"`
+		AutoCheckUpdates    *bool `json:"autoCheckUpdates"`
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return settings, fmt.Errorf("解析设置文件：%w", err)
+	}
+	if stored.DownloadConcurrency != nil && *stored.DownloadConcurrency >= minDownloadConcurrency && *stored.DownloadConcurrency <= maxDownloadConcurrency {
+		settings.DownloadConcurrency = *stored.DownloadConcurrency
+	}
+	if stored.AutoCheckUpdates != nil {
+		settings.AutoCheckUpdates = *stored.AutoCheckUpdates
+	}
+	return settings, nil
+}
+
+func saveAppSettings(path string, settings AppSettings) error {
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("编码应用设置：%w", err)
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o644)
+}
+
+func normalizeAppSettings(settings AppSettings) (AppSettings, error) {
+	if settings.DownloadConcurrency < minDownloadConcurrency || settings.DownloadConcurrency > maxDownloadConcurrency {
+		return AppSettings{}, fmt.Errorf("下载并发数必须在 %d-%d 之间", minDownloadConcurrency, maxDownloadConcurrency)
+	}
+	return settings, nil
+}
+
+func (a *App) currentSettings() AppSettings {
+	a.settingsMu.RLock()
+	defer a.settingsMu.RUnlock()
+	return a.settings
+}
+
+// SaveSettings 保存用户设置，并立即调整下载 worker 数量。
+func (a *App) SaveSettings(request AppSettings) (AppSettings, error) {
+	settings, err := normalizeAppSettings(request)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	previous := a.currentSettings()
+	if a.settingsPath != "" {
+		if err := saveAppSettings(a.settingsPath, settings); err != nil {
+			return AppSettings{}, fmt.Errorf("保存应用设置：%w", err)
+		}
+	}
+	if a.downloads != nil && settings.DownloadConcurrency != previous.DownloadConcurrency {
+		if err := a.downloads.SetConcurrency(settings.DownloadConcurrency); err != nil {
+			if a.settingsPath != "" {
+				_ = saveAppSettings(a.settingsPath, previous)
+			}
+			return AppSettings{}, err
+		}
+	}
+	a.settingsMu.Lock()
+	a.settings = settings
+	a.settingsMu.Unlock()
+	return settings, nil
+}
+
+// CheckForUpdates 查询 GitHub 最新正式 Release，并返回当前平台可下载地址。
+func (a *App) CheckForUpdates() (UpdateInfo, error) {
+	ctx, cancel := context.WithTimeout(a.appContext(), 12*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, githubLatestReleaseURL, nil)
+	if err != nil {
+		return UpdateInfo{}, err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "Shiyin/"+appVersion)
+	response, err := (&http.Client{Timeout: 12 * time.Second}).Do(request)
+	if err != nil {
+		return UpdateInfo{}, fmt.Errorf("连接 GitHub 更新服务失败：%w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return UpdateInfo{}, fmt.Errorf("GitHub 更新服务返回 HTTP %d", response.StatusCode)
+	}
+	var release githubReleasePayload
+	if err := json.NewDecoder(response.Body).Decode(&release); err != nil {
+		return UpdateInfo{}, fmt.Errorf("解析 GitHub Release 失败：%w", err)
+	}
+	latest := normalizeReleaseVersion(release.TagName)
+	if latest == "" {
+		return UpdateInfo{}, errors.New("GitHub Release 没有有效版本号")
+	}
+	releaseURL := strings.TrimSpace(release.HTMLURL)
+	if releaseURL == "" {
+		releaseURL = "https://github.com/EricHongXDD/shiyin-bwiki/releases/latest"
+	}
+	info := UpdateInfo{
+		CurrentVersion:  normalizeReleaseVersion(appVersion),
+		LatestVersion:   latest,
+		UpdateAvailable: compareReleaseVersions(latest, appVersion) > 0,
+		ReleaseURL:      releaseURL,
+		DownloadURL:     releaseURL,
+		PublishedAt:     release.PublishedAt,
+	}
+	for _, asset := range release.Assets {
+		if strings.HasSuffix(strings.ToLower(asset.Name), "-windows-amd64-setup.exe") && strings.TrimSpace(asset.BrowserDownloadURL) != "" {
+			info.DownloadURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	return info, nil
+}
+
+func normalizeReleaseVersion(raw string) string {
+	raw = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(raw, "v"), "V"))
+	if index := strings.IndexAny(raw, "-+"); index >= 0 {
+		raw = raw[:index]
+	}
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	values := make([]int, 3)
+	for index, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil || value < 0 {
+			return ""
+		}
+		values[index] = value
+	}
+	return fmt.Sprintf("%d.%d.%d", values[0], values[1], values[2])
+}
+
+func compareReleaseVersions(left, right string) int {
+	left = normalizeReleaseVersion(left)
+	right = normalizeReleaseVersion(right)
+	if left == "" || right == "" {
+		return 0
+	}
+	leftParts := strings.Split(left, ".")
+	rightParts := strings.Split(right, ".")
+	for index := range leftParts {
+		leftValue, _ := strconv.Atoi(leftParts[index])
+		rightValue, _ := strconv.Atoi(rightParts[index])
+		if leftValue > rightValue {
+			return 1
+		}
+		if leftValue < rightValue {
+			return -1
+		}
+	}
+	return 0
+}
+
+// OpenExternalURL 只允许打开 GitHub HTTPS 页面或 Release 资产。
+func (a *App) OpenExternalURL(rawURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Host, "github.com") {
+		return errors.New("只允许打开 GitHub HTTPS 链接")
+	}
+	wailsruntime.BrowserOpenURL(a.appContext(), parsed.String())
+	return nil
 }
 
 func (a *App) ParsePage(rawURL string) ParseResponse {

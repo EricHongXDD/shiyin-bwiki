@@ -192,6 +192,33 @@ svg {
   gap: 10px;
 }
 
+.view-tabs {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.view-tab {
+  min-width: 58px;
+  height: 30px;
+  padding: 0 13px;
+  color: var(--text-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.view-tab:hover { color: var(--accent-text); background: var(--accent-softer); }
+.view-tab.is-active { color: var(--accent-text); background: var(--accent-soft); box-shadow: 0 1px 3px rgba(59, 88, 221, 0.12); }
+.view-tab:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(76, 111, 255, 0.18); }
+
 .version-badge {
   padding: 5px 10px;
   color: var(--text-secondary);
@@ -1962,6 +1989,128 @@ input:focus-visible + .custom-check {
   margin: -3px -3px 0 0;
 }
 
+.app-view { min-width: 0; }
+
+.settings-view {
+  min-height: 510px;
+  padding: clamp(24px, 4vw, 44px);
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-heading h2 {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: clamp(23px, 3vw, 31px);
+  letter-spacing: -0.03em;
+}
+
+.settings-heading p {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.settings-grid {
+  display: grid;
+  max-width: 980px;
+  margin-top: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.settings-card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--accent-text);
+  border-radius: 11px;
+  background: var(--accent-soft);
+}
+
+.settings-icon svg { width: 18px; height: 18px; }
+.settings-icon.update-icon { color: #16805a; background: var(--success-soft); }
+.settings-card-head h3 { margin: 1px 0 0; color: var(--text); font-size: 15px; }
+.settings-card-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 10.5px; line-height: 1.55; }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 25px;
+  padding: 16px 0;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-copy { min-width: 0; }
+.settings-copy strong, .settings-copy span { display: block; }
+.settings-copy strong { color: var(--text); font-size: 12px; }
+.settings-copy span { margin-top: 4px; color: var(--text-tertiary); font-size: 10px; }
+
+.number-control {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 10px;
+  gap: 5px;
+  color: var(--text-secondary);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.number-control input {
+  width: 47px;
+  padding: 0;
+  color: var(--text);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-weight: 700;
+  text-align: right;
+}
+
+.settings-footer, .update-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 16px;
+  gap: 10px;
+}
+
+.settings-save-status { color: var(--success); font-size: 10px; }
+.settings-info-row { display: flex; justify-content: space-between; margin-top: 25px; padding: 13px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text-secondary); font-size: 11px; }
+.settings-info-row strong { color: var(--text); font-weight: 700; }
+.update-check-control { display: flex; margin-top: 16px; color: var(--text-secondary); font-size: 11px; }
+.update-actions { justify-content: flex-start; }
+.update-status { min-height: 18px; margin: 12px 0 0; color: var(--text-tertiary); font-size: 10.5px; }
+.update-status.is-available { color: var(--success); font-weight: 650; }
+.update-status.is-error { color: var(--danger); }
+
 [hidden] {
   display: none !important;
 }
@@ -2003,6 +2152,10 @@ input:focus-visible + .custom-check {
 }
 
 @media (max-width: 720px) {
+  .view-tabs { margin-left: auto; margin-right: 8px; }
+  .view-tab { min-width: 48px; padding: 0 9px; }
+  .settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-view { padding: 22px 16px; }
   .app-header {
     height: 66px;
     padding: 0 16px;

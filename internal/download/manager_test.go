@@ -445,3 +445,26 @@ func assertFileContent(t *testing.T, path string, expected []byte) {
 		t.Fatalf("下载文件内容不一致：got %d bytes, want %d bytes", len(actual), len(expected))
 	}
 }
+
+func TestSetConcurrency(t *testing.T) {
+	manager := newTestManager(t, Config{StatePath: filepath.Join(t.TempDir(), "state.json"), Concurrency: 2})
+	defer manager.Close()
+	if got := manager.Concurrency(); got != 2 {
+		t.Fatalf("初始并发数 = %d，期望 2", got)
+	}
+	if err := manager.SetConcurrency(6); err != nil {
+		t.Fatalf("扩容失败：%v", err)
+	}
+	if got := manager.Concurrency(); got != 6 {
+		t.Fatalf("扩容后并发数 = %d，期望 6", got)
+	}
+	if err := manager.SetConcurrency(3); err != nil {
+		t.Fatalf("缩容失败：%v", err)
+	}
+	if got := manager.Concurrency(); got != 3 {
+		t.Fatalf("缩容后并发数 = %d，期望 3", got)
+	}
+	if err := manager.SetConcurrency(0); err == nil {
+		t.Fatal("并发数为 0 时应返回错误")
+	}
+}
