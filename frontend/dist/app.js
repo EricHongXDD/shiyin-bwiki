@@ -1418,6 +1418,7 @@
     const activeClass = summary.status === "running" || summary.status === "queued" ? " is-active" : "";
     const failedClass = summary.status === "failed" ? " is-failed" : "";
     const completedClass = summary.status === "completed" ? " is-completed" : "";
+    const subtitleTasks = batch.tasks.filter(canDownloadTaskSubtitle);
     const firstTitle = displayText(batch.tasks[0]?.title, "语音下载");
     const moreText = batch.tasks.length > 1 ? ` 等 ${batch.tasks.length} 条` : " · 1 条语音";
     const progressMeta = summary.totalBytes > 0
@@ -1427,6 +1428,14 @@
       .filter((status) => summary.counts[status] > 0)
       .map((status) => `<span class="batch-count batch-count-${status}">${statusDetails(status)[0]} ${summary.counts[status]}</span>`)
       .join("");
+    const subtitleAction = subtitleTasks.length
+      ? `<div class="batch-actions">
+          <button class="button button-ghost button-compact" type="button" data-batch-action="download-subtitles" data-batch-id="${escapeHTML(batch.id)}" title="下载这个批次中尚未保存的字幕">
+            ${icon("file-text")}<span>下载字幕 (${subtitleTasks.length})</span>
+          </button>
+          <span class="batch-action-note">仅处理未下载字幕</span>
+        </div>`
+      : "";
     return `
       <article class="task-batch-card${activeClass}${failedClass}${completedClass}" data-batch-card="${escapeHTML(batch.id)}">
         <button class="task-batch-toggle" type="button" data-batch-toggle="${escapeHTML(batch.id)}" aria-label="查看下载批次，共 ${summary.total} 条语音">
@@ -1446,6 +1455,7 @@
           <strong>${summary.speed > 0 ? `${formatBytes(summary.speed)}/s` : summary.progressText}</strong>
         </div>
         <div class="batch-counts">${countSummary}</div>
+        ${subtitleAction}
       </article>`;
   }
 
@@ -1560,6 +1570,40 @@
     const path = state.downloadDirectory || "尚未选择下载目录";
     elements.directoryPath.textContent = path;
     elements.directoryPath.title = state.downloadDirectory;
+  }
+
+  async function downloadBatchSubtitles(batch, button) {
+    if (!batch || !state.api) return;
+    const subtitleTasks = batch.tasks.filter(canDownloadTaskSubtitle);
+    if (!subtitleTasks.length) {
+      showToast("没有可下载的字幕", "这个批次的字幕已经存在，或任务没有保存台词文本。", "warning");
+      return;
+    }
+    button.disabled = true;
+    let created = 0;
+    const errors = [];
+    try {
+      for (const task of subtitleTasks) {
+        try {
+          const result = await state.api.DownloadTaskSubtitle(task.id);
+          if (result && typeof result === "object") {
+            upsertTask(result, false);
+            created += 1;
+          }
+        } catch (error) {
+          errors.push(displayText(error?.message || error, `${task.fileName} 下载失败`));
+        }
+      }
+      renderTasks();
+      if (created > 0) {
+        const suffix = errors.length ? `，另有 ${errors.length} 条未创建` : "";
+        showToast("已创建字幕下载任务", `共 ${created} 个字幕文件${suffix}，会保存到对应语音文件夹。`, "success");
+      } else {
+        showToast("字幕下载失败", errors[0] || "没有成功创建字幕任务。", "error");
+      }
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
   }
 
   async function runTaskAction(action, id, button) {
@@ -1791,6 +1835,14 @@
     elements.chooseDirectoryButton.addEventListener("click", chooseDirectory);
     elements.clearCompletedButton.addEventListener("click", clearCompletedTasks);
     elements.taskPanel.addEventListener("click", (event) => {
+      const batchAction = event.target.closest("[data-batch-action]");
+      if (batchAction) {
+        const batch = buildTaskBatches().find((item) => item.id === batchAction.dataset.batchId);
+        if (batch && batchAction.dataset.batchAction === "download-subtitles") {
+          downloadBatchSubtitles(batch, batchAction);
+        }
+        return;
+      }
       const batchToggle = event.target.closest("[data-batch-toggle]");
       if (batchToggle) {
         state.activeBatchId = batchToggle.dataset.batchToggle;
