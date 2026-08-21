@@ -953,6 +953,10 @@ func cleanTextWithoutAudio(node *xhtml.Node) string {
 		if current == node || current.Type != xhtml.ElementNode {
 			return false
 		}
+		// BWIKI 用下划线标记触发条件；它不是台词或字幕内容。
+		if current.Data == "u" {
+			return true
+		}
 		if _, ok := attribute(current, "data-file"); ok || current.Data == "audio" || current.Data == "source" {
 			return true
 		}

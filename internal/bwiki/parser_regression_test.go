@@ -92,6 +92,20 @@ func TestTriggerSuffixIsRemovedFromEntryTitle(t *testing.T) {
 	}
 }
 
+func TestUnderlinedTriggerTextIsExcludedFromAudioText(t *testing.T) {
+	t.Parallel()
+	page := parseRegressionPage(t, `<table>
+		<tr><th>彩蛋</th><td><audio src="https://i0.hdslb.com/eika-knockout.mp3"></audio></td><td>好枪法啊，艾卡！回去以后咱们再单独切磋一下！ <u>艾卡击倒敌人触发</u></td></tr>
+	</table>`)
+
+	if len(page.Entries) != 1 || len(page.Entries[0].Audios) != 1 {
+		t.Fatalf("下划线触发词解析结果 = %#v", page.Entries)
+	}
+	if got := page.Entries[0].Audios[0].Text; got != "好枪法啊，艾卡！回去以后咱们再单独切磋一下！" {
+		t.Fatalf("下划线触发词未从台词中移除：%q", got)
+	}
+}
+
 func parseRegressionPage(t *testing.T, markup string) Page {
 	t.Helper()
 	target, err := ParseURL(samplePageURL)
