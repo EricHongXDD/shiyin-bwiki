@@ -26,7 +26,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.3.0-dev"
+var appVersion = "1.3.1-dev"
 
 const (
 	defaultDownloadConcurrency = 4

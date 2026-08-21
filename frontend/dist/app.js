@@ -62,7 +62,9 @@
 
   function cleanEntryTitle(value) {
     const text = displayText(value);
-    return text.replace(/\s+([^\s]*触发)$/u, "").trim() || text;
+    const triggerMatch = text.match(/\s+[^\s]*触发/u);
+    if (!triggerMatch || triggerMatch.index <= 0) return text;
+    return text.slice(0, triggerMatch.index).trim() || text;
   }
 
   function sceneKey(value) {

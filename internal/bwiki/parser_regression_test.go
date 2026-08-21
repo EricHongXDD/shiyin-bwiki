@@ -61,9 +61,34 @@ func TestRowspanTitleSurvivesInvalidFirstAudio(t *testing.T) {
 
 func TestTriggerSuffixIsRemovedFromEntryTitle(t *testing.T) {
 	t.Parallel()
-	page := parseRegressionPage(t, `<table><tr><th>别慌，我知道治愈魔法正确的使用方法 救治忧雾触发</th><td><audio src="https://i0.hdslb.com/cure.mp3"></audio></td><td>别慌，我知道治愈魔法正确的使用方法</td></tr></table>`)
-	if len(page.Entries) != 1 || page.Entries[0].Title != "别慌，我知道治愈魔法正确的使用方法" {
-		t.Fatalf("触发后缀未清理：%#v", page.Entries)
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "single trigger suffix",
+			input: "别慌，我知道治愈魔法正确的使用方法 救治忧雾触发",
+			want:  "别慌，我知道治愈魔法正确的使用方法",
+		},
+		{
+			name:  "repeated trigger fragments",
+			input: "好枪法啊，艾卡！回去以后咱们再单独切磋一下！ 艾卡击倒敌人触发，没有去处 艾卡击倒敌人触发",
+			want:  "好枪法啊，艾卡！回去以后咱们再单独切磋一下！",
+		},
+		{
+			name:  "another trigger suffix",
+			input: "没有去处 艾卡击倒敌人触发",
+			want:  "没有去处",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			page := parseRegressionPage(t, `<table><tr><th>`+test.input+`</th><td><audio src="https://i0.hdslb.com/`+test.name+`.mp3"></audio></td></tr></table>`)
+			if len(page.Entries) != 1 || page.Entries[0].Title != test.want {
+				t.Fatalf("触发后缀未清理：%#v，期望 %q", page.Entries, test.want)
+			}
+		})
 	}
 }
 
