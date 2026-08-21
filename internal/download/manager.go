@@ -681,9 +681,11 @@ func (m *Manager) newIDLocked() (string, error) {
 func (m *Manager) reservedPathsLocked() map[string]struct{} {
 	reserved := make(map[string]struct{}, len(m.tasks))
 	for _, state := range m.tasks {
-		if state.task.OutputPath != "" {
-			reserved[pathKey(state.task.OutputPath)] = struct{}{}
+		// 已完成任务的文件可能已被用户删除；实际存在的文件由 pathOccupied 检查。
+		if state.task.Status == StatusCompleted || state.task.OutputPath == "" {
+			continue
 		}
+		reserved[pathKey(state.task.OutputPath)] = struct{}{}
 	}
 	return reserved
 }

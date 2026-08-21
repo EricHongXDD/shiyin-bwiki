@@ -136,6 +136,40 @@ func TestTextTaskWritesUTF8IntoSubdirectory(t *testing.T) {
 		t.Fatalf("字幕临时文件未清理：err=%v", err)
 	}
 }
+func TestCompletedTaskCanReuseNameAfterFileDeletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte("voice"))
+	}))
+	defer server.Close()
+	directory := t.TempDir()
+	manager := newTestManager(t, Config{StatePath: filepath.Join(directory, "state.json"), Concurrency: 1})
+	defer manager.Close()
+	first, err := manager.Add(NewTask{
+		FileName:  "明语音-022CN.mp3",
+		URL:       server.URL,
+		Directory: directory,
+	})
+	if err != nil {
+		t.Fatalf("第一次 Add() error = %v", err)
+	}
+	waitTaskStatus(t, manager, first.ID, StatusCompleted)
+	if err := os.Remove(first.OutputPath); err != nil {
+		t.Fatalf("删除旧音频文件失败：%v", err)
+	}
+	second, err := manager.Add(NewTask{
+		FileName:  "明语音-022CN.mp3",
+		URL:       server.URL,
+		Directory: directory,
+	})
+	if err != nil {
+		t.Fatalf("删除旧文件后再次 Add() error = %v", err)
+	}
+	if second.FileName != "明语音-022CN.mp3" {
+		t.Fatalf("删除旧文件后错误生成重复文件名：%q", second.FileName)
+	}
+	waitTaskStatus(t, manager, second.ID, StatusCompleted)
+}
+
 func TestAddSubtitleTaskForCompletedAudio(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte("voice"))
