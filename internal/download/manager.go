@@ -436,9 +436,22 @@ func (m *Manager) enqueue(id string) {
 }
 
 func (m *Manager) prepareTaskLocked(input NewTask, reserved map[string]struct{}, batchID string, now time.Time) (Task, error) {
-	parsedURL, err := url.Parse(strings.TrimSpace(input.URL))
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil {
-		return Task{}, errors.New("URL 必须是有效的 HTTP 或 HTTPS 地址")
+	taskType := strings.ToLower(strings.TrimSpace(input.Type))
+	if taskType == "" {
+		taskType = TaskTypeAudio
+	}
+	if taskType != TaskTypeAudio && taskType != TaskTypeText {
+		return Task{}, errors.New("任务类型无效")
+	}
+	var parsedURL *url.URL
+	if taskType == TaskTypeAudio {
+		var err error
+		parsedURL, err = url.Parse(strings.TrimSpace(input.URL))
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil {
+			return Task{}, errors.New("URL 必须是有效的 HTTP 或 HTTPS 地址")
+		}
+	} else if len(input.Content) > maxTextContentBytes {
+		return Task{}, fmt.Errorf("字幕文本不能超过 %d 字节", maxTextContentBytes)
 	}
 	if strings.TrimSpace(input.Directory) == "" {
 		return Task{}, errors.New("下载目录不能为空")
@@ -447,13 +460,24 @@ func (m *Manager) prepareTaskLocked(input NewTask, reserved map[string]struct{},
 	if err != nil {
 		return Task{}, fmt.Errorf("解析下载目录：%w", err)
 	}
+	if subdirectory := strings.TrimSpace(input.Subdirectory); subdirectory != "" {
+		subdirectory = SanitizeDirectoryName(subdirectory)
+		if subdirectory == "" || subdirectory == "." || subdirectory == ".." {
+			return Task{}, errors.New("角色名不能作为下载目录")
+		}
+		directory = filepath.Join(directory, subdirectory)
+	}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return Task{}, fmt.Errorf("创建下载目录：%w", err)
 	}
 
 	fileName := strings.TrimSpace(input.FileName)
 	if fileName == "" {
-		fileName = filepath.Base(parsedURL.Path)
+		if parsedURL != nil {
+			fileName = filepath.Base(parsedURL.Path)
+		} else {
+			fileName = "subtitle.txt"
+		}
 	}
 	fileName = SanitizeFileName(fileName)
 	fileName, outputPath, err := chooseAvailablePath(directory, fileName, reserved)
@@ -465,18 +489,24 @@ func (m *Manager) prepareTaskLocked(input NewTask, reserved map[string]struct{},
 	if err != nil {
 		return Task{}, err
 	}
+	canonicalURL := ""
+	if parsedURL != nil {
+		canonicalURL = parsedURL.String()
+	}
 	return Task{
 		ID:           id,
 		BatchID:      batchID,
+		Type:         taskType,
 		SourceID:     input.SourceID,
 		Title:        input.Title,
 		Category:     input.Category,
 		Language:     input.Language,
 		LanguageName: input.LanguageName,
 		FileName:     fileName,
-		URL:          parsedURL.String(),
+		URL:          canonicalURL,
 		Directory:    directory,
 		OutputPath:   outputPath,
+		Content:      input.Content,
 		Status:       StatusQueued,
 		CreatedAt:    now,
 		UpdatedAt:    now,

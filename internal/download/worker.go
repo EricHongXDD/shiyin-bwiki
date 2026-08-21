@@ -24,6 +24,8 @@ type downloadResult struct {
 
 const progressPersistInterval = time.Second
 
+const maxTextContentBytes = 1 << 20
+
 func (m *Manager) worker() {
 	defer m.wg.Done()
 	for {
@@ -183,6 +185,9 @@ func (m *Manager) download(ctx context.Context, task Task) downloadResult {
 		total:        task.Total,
 		etag:         task.ETag,
 		lastModified: task.LastModified,
+	}
+	if task.Type == TaskTypeText {
+		return m.downloadText(ctx, task, result)
 	}
 	if err := os.MkdirAll(task.Directory, 0o755); err != nil {
 		result.err = fmt.Errorf("创建下载目录：%w", err)
@@ -431,6 +436,71 @@ func (m *Manager) download(ctx context.Context, task Task) downloadResult {
 		result.err = err
 		return result
 	}
+	result.completed = true
+	return result
+}
+
+func (m *Manager) downloadText(ctx context.Context, task Task, result downloadResult) downloadResult {
+	data := []byte(task.Content)
+	result.total = int64(len(data))
+	if err := ctx.Err(); err != nil {
+		result.err = err
+		return result
+	}
+	if err := os.MkdirAll(task.Directory, 0o755); err != nil {
+		result.err = fmt.Errorf("创建字幕目录：%w", err)
+		return result
+	}
+	partPath := task.OutputPath + ".part"
+	if info, err := os.Stat(task.OutputPath); err == nil {
+		if info.Mode().IsRegular() && info.Size() == int64(len(data)) {
+			if _, partErr := os.Stat(partPath); errors.Is(partErr, os.ErrNotExist) {
+				result.bytes = int64(len(data))
+				result.completed = true
+				return result
+			}
+		}
+		result.err = errors.New("目标字幕文件已存在，为避免覆盖已停止任务")
+		return result
+	} else if !errors.Is(err, os.ErrNotExist) {
+		result.err = fmt.Errorf("检查目标字幕文件：%w", err)
+		return result
+	}
+
+	file, err := os.OpenFile(partPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		result.err = fmt.Errorf("创建字幕临时文件：%w", err)
+		return result
+	}
+	written, writeErr := file.Write(data)
+	if writeErr == nil {
+		writeErr = file.Sync()
+	}
+	closeErr := file.Close()
+	if writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		result.err = fmt.Errorf("写入字幕文件：%w", writeErr)
+		return result
+	}
+	if err := ctx.Err(); err != nil {
+		result.err = err
+		return result
+	}
+	if written != len(data) {
+		result.err = fmt.Errorf("写入字幕文件不完整：收到 %d 字节，期望 %d 字节", written, len(data))
+		return result
+	}
+	if err := m.checkpointProgress(task.ID, int64(written), int64(len(data)), "", ""); err != nil {
+		result.err = fmt.Errorf("保存字幕完成检查点：%w", err)
+		return result
+	}
+	if err := completePartial(partPath, task.OutputPath, int64(written)); err != nil {
+		result.err = err
+		return result
+	}
+	result.bytes = int64(written)
 	result.completed = true
 	return result
 }
