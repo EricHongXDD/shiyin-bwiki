@@ -14,7 +14,7 @@
   "info": {
     "companyName": "EricHongXDD",
     "productName": "拾音 Shiyin · BWIKI 语音下载器",
-    "productVersion": "1.1.0",
+    "productVersion": "1.2.0",
     "copyright": "Copyright © 2026 EricHongXDD",
     "comments": "Built with Go and Wails; assisted by OpenAI Codex."
   }

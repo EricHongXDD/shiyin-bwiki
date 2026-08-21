@@ -108,6 +108,91 @@ func (m *Manager) Add(input NewTask) (Task, error) {
 	return tasks[0], nil
 }
 
+// AddSubtitleTask 为已完成且保留了台词文本的音频任务补建字幕任务。
+func (m *Manager) AddSubtitleTask(id string) (Task, error) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return Task{}, ErrClosed
+	}
+	state, ok := m.tasks[id]
+	if !ok {
+		m.mu.Unlock()
+		return Task{}, ErrTaskNotFound
+	}
+	source := state.task
+	if source.Type != TaskTypeAudio || source.Status != StatusCompleted {
+		m.mu.Unlock()
+		return Task{}, fmt.Errorf("%w：只有已完成的音频任务可以补下载字幕", ErrInvalidTransition)
+	}
+	if strings.TrimSpace(source.Content) == "" {
+		m.mu.Unlock()
+		return Task{}, errors.New("此任务没有保存字幕文本，无法补下载字幕")
+	}
+
+	directory := filepath.Dir(source.OutputPath)
+	fileName := subtitleFileName(source.FileName)
+	outputPath := filepath.Join(directory, fileName)
+	reserved := m.reservedPathsLocked()
+	if _, exists := reserved[pathKey(outputPath)]; exists {
+		m.mu.Unlock()
+		return Task{}, errors.New("该任务的字幕已经在下载队列中")
+	}
+	occupied, err := pathOccupied(outputPath)
+	if err != nil {
+		m.mu.Unlock()
+		return Task{}, fmt.Errorf("检查字幕文件：%w", err)
+	}
+	if occupied {
+		m.mu.Unlock()
+		return Task{}, errors.New("对应的字幕文件已经存在")
+	}
+
+	sourceID := source.SourceID
+	if sourceID == "" {
+		sourceID = source.ID
+	}
+	batchID, err := m.newBatchIDLocked()
+	if err != nil {
+		m.mu.Unlock()
+		return Task{}, err
+	}
+	task, err := m.prepareTaskLocked(NewTask{
+		Type:         TaskTypeText,
+		SourceID:     sourceID + ":text",
+		Title:        source.Title,
+		Category:     source.Category,
+		Language:     source.Language,
+		LanguageName: source.LanguageName,
+		FileName:     fileName,
+		Directory:    directory,
+		Content:      source.Content,
+	}, reserved, batchID, time.Now().UTC())
+	if err != nil {
+		m.mu.Unlock()
+		return Task{}, err
+	}
+	m.tasks[task.ID] = &taskState{task: task}
+	m.mu.Unlock()
+
+	if err := m.persist(); err != nil {
+		m.mu.Lock()
+		delete(m.tasks, task.ID)
+		m.mu.Unlock()
+		_ = m.persist()
+		return Task{}, err
+	}
+
+	m.notify(task)
+	m.mu.Lock()
+	if !m.closed {
+		m.pending = append(m.pending, task.ID)
+		m.cond.Signal()
+	}
+	m.mu.Unlock()
+	return task, nil
+}
+
 // AddBatch 原子地校验并加入一批下载任务。
 func (m *Manager) AddBatch(inputs []NewTask) ([]Task, error) {
 	if len(inputs) == 0 {
@@ -443,6 +528,9 @@ func (m *Manager) prepareTaskLocked(input NewTask, reserved map[string]struct{},
 	if taskType != TaskTypeAudio && taskType != TaskTypeText {
 		return Task{}, errors.New("任务类型无效")
 	}
+	if len(input.Content) > maxTextContentBytes {
+		return Task{}, fmt.Errorf("字幕文本不能超过 %d 字节", maxTextContentBytes)
+	}
 	var parsedURL *url.URL
 	if taskType == TaskTypeAudio {
 		var err error
@@ -450,8 +538,6 @@ func (m *Manager) prepareTaskLocked(input NewTask, reserved map[string]struct{},
 		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil {
 			return Task{}, errors.New("URL 必须是有效的 HTTP 或 HTTPS 地址")
 		}
-	} else if len(input.Content) > maxTextContentBytes {
-		return Task{}, fmt.Errorf("字幕文本不能超过 %d 字节", maxTextContentBytes)
 	}
 	if strings.TrimSpace(input.Directory) == "" {
 		return Task{}, errors.New("下载目录不能为空")

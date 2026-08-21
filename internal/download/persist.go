@@ -121,6 +121,9 @@ func validateLoadedTask(task Task) (Task, bool, error) {
 	if taskType != TaskTypeAudio && taskType != TaskTypeText {
 		return Task{}, false, errors.New("任务类型无效")
 	}
+	if len(task.Content) > maxTextContentBytes {
+		return Task{}, false, errors.New("字幕文本过大")
+	}
 	if taskType == TaskTypeAudio {
 		rawURL := strings.TrimSpace(task.URL)
 		parsedURL, err := url.Parse(rawURL)
@@ -132,8 +135,6 @@ func validateLoadedTask(task Task) (Task, bool, error) {
 			task.URL = canonicalURL
 			changed = true
 		}
-	} else if len(task.Content) > maxTextContentBytes {
-		return Task{}, false, errors.New("字幕文本过大")
 	}
 
 	if strings.TrimSpace(task.Directory) == "" || !filepath.IsAbs(task.Directory) {

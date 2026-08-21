@@ -64,6 +64,14 @@ func SanitizeDirectoryName(name string) string {
 	return SanitizeFileName(name)
 }
 
+func subtitleFileName(fileName string) string {
+	extension := filepath.Ext(fileName)
+	if extension == "" || extension == fileName {
+		return fileName + ".txt"
+	}
+	return strings.TrimSuffix(fileName, extension) + ".txt"
+}
+
 func truncateUTF8(value string, maximum int) string {
 	if maximum <= 0 {
 		return ""

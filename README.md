@@ -71,11 +71,11 @@ https://wiki.biligame.com/klbq/米雪儿·李/语音台词
 
 ## 下载
 
-前往 [Releases](https://github.com/EricHongXDD/shiyin-bwiki/releases) 下载对应平台的压缩包：
+前往 [Releases](https://github.com/EricHongXDD/shiyin-bwiki/releases) 下载对应平台的安装包或压缩包：
 
 | 平台 | Release 产物 | 说明 |
 | --- | --- | --- |
-| Windows x64 | `Shiyin-vX.Y.Z-windows-amd64.zip` | 解压后运行 `Shiyin.exe`；需要 WebView2 Runtime |
+| Windows x64 | `Shiyin-vX.Y.Z-windows-amd64-setup.exe` | 双击安装后可从开始菜单启动；需要 WebView2 Runtime |
 | macOS 通用版 | `Shiyin-vX.Y.Z-macos-universal.zip` | 同时包含 Intel 与 Apple Silicon 架构 |
 | Linux x64 | `Shiyin-vX.Y.Z-linux-amd64.tar.gz` | 需要 GTK3、WebKit2GTK 4.1；音频试听还需要 GStreamer 插件 |
 | 校验和 | `SHA256SUMS.txt` | 用于验证下载文件是否完整 |

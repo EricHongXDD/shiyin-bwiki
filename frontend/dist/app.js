@@ -229,9 +229,9 @@
       "warningStack", "resultsToolbar", "searchInput", "languagePicker", "languageTrigger",
       "languageSummary", "languageMenu", "scenePicker", "sceneTrigger", "sceneSummary", "sceneMenu",
       "selectionBar", "selectAllCheckbox", "selectAllLabel",
-      "selectedSummary", "clearHiddenSelection", "clearSelection", "includeSubtitlesCheckbox", "batchDownloadButton", "batchDownloadLabel", "contentState",
+      "selectedSummary", "clearHiddenSelection", "clearSelection", "includeSubtitlesCheckbox", "batchDownloadButton", "batchDownloadLabel", "batchSubtitleDownloadButton", "batchSubtitleDownloadLabel", "contentState",
       "voiceList", "taskPanel", "taskCount", "clearCompletedButton", "closeTaskDrawer", "directoryPath",
-      "chooseDirectoryButton", "taskOverview", "taskBatchView", "taskList", "taskDetailView", "batchBackButton",
+      "chooseDirectoryButton", "taskOverview", "taskBatchView", "taskList", "taskDetailView", "taskContextMenu", "batchBackButton",
       "batchDetailTitle", "batchDetailMeta", "taskStatusFilters", "batchTaskList", "taskPagination",
       "drawerScrim", "bridgeBanner", "toastRegion",
     ].forEach((id) => { elements[id] = byId(id); });
@@ -373,7 +373,7 @@
       languageName: variant.languageName,
       fileName: isText ? subtitleFileName(variant.fileName) : variant.fileName,
       url: isText ? "" : variant.url,
-      content: isText ? variant.transcript : "",
+      content: variant.transcript || "",
     };
   }
 
@@ -654,13 +654,16 @@
     elements.selectAllCheckbox.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
     elements.selectAllCheckbox.disabled = visible.length === 0;
     elements.selectAllLabel.textContent = elements.selectAllCheckbox.checked ? "取消全选当前结果" : "全选当前结果";
-    elements.selectedSummary.textContent = `已选择 ${totalSelected} 条语音`;
+    const subtitleSelected = [...state.selected.values()].filter((variant) => variant?.transcript).length;
+    elements.selectedSummary.textContent = `已选择 ${totalSelected} 条语音 · ${subtitleSelected} 条有字幕`;
     elements.includeSubtitlesCheckbox.checked = state.includeSubtitles;
     elements.clearHiddenSelection.hidden = hiddenSelected === 0;
     elements.clearHiddenSelection.textContent = `清除隐藏的 ${hiddenSelected} 条`;
     elements.clearSelection.hidden = totalSelected === 0;
     elements.batchDownloadButton.disabled = totalSelected === 0;
     elements.batchDownloadLabel.textContent = totalSelected ? `下载所选 (${totalSelected})` : "下载所选";
+    elements.batchSubtitleDownloadButton.disabled = subtitleSelected === 0;
+    elements.batchSubtitleDownloadLabel.textContent = subtitleSelected ? `仅下载字幕 (${subtitleSelected})` : "仅下载字幕";
 
     document.querySelectorAll("[data-entry-select]").forEach((checkbox) => {
       const group = groups.find(({ entry }) => entry.id === checkbox.dataset.entrySelect);
@@ -1088,7 +1091,9 @@
       showToast("没有可下载的语音", "所选内容缺少有效的音频地址。", "warning");
       return;
     }
-    if (!state.api || !(await ensureDirectory())) return;
+    if (!state.api) return;
+    if (!options.directory && !(await ensureDirectory())) return;
+    const requestDirectory = options.directory || state.downloadDirectory;
     const button = options.button;
     if (button) button.disabled = true;
     try {
@@ -1099,8 +1104,8 @@
         : [];
       const items = audioItems.concat(subtitleItems);
       const response = await state.api.QueueDownloads({
-        directory: state.downloadDirectory,
-        roleName: state.page?.roleName || "",
+        directory: requestDirectory,
+        roleName: options.roleName ?? state.page?.roleName ?? "",
         items,
       });
       const tasks = unwrapTasks(response);
@@ -1119,8 +1124,10 @@
     } catch (error) {
       showToast("创建下载任务失败", displayText(error?.message || error, "请稍后重试。"), "error");
     } finally {
-      if (button) {
-        button.disabled = button === elements.batchDownloadButton ? state.selected.size === 0 : false;
+      if (button === elements.batchDownloadButton || button === elements.batchSubtitleDownloadButton) {
+        renderSelectionState();
+      } else if (button) {
+        button.disabled = false;
       }
     }
   }
@@ -1168,11 +1175,13 @@
       ...raw,
       id,
       batchId: displayText(raw.batchId ?? raw.batchID ?? raw.groupId, previous?.batchId),
+      sourceId: displayText(raw.sourceId ?? raw.sourceID, previous?.sourceId),
       status,
       type: displayText(raw.type, previous?.type || "audio"),
       title: displayText(raw.title || raw.entryTitle || raw.displayName, previous?.title || "语音下载"),
       category: displayText(raw.category, previous?.category),
       fileName: displayText(raw.fileName || raw.filename || raw.name, previous?.fileName || "正在准备文件…"),
+      content: displayText(raw.content ?? raw.transcript, previous?.content),
       languageName: displayText(raw.languageName || raw.language, previous?.languageName),
       directory: displayText(raw.directory, previous?.directory),
       createdAt: raw.createdAt || previous?.createdAt || "",
@@ -1332,6 +1341,32 @@
     return `${languages.length} 种语言`;
   }
 
+  function taskSubtitleVariant(task) {
+    const sourceId = displayText(task?.sourceId);
+    return sourceId ? state.allVariants.get(sourceId) : null;
+  }
+
+  function taskSubtitleContent(task) {
+    return displayText(task?.content) || displayText(taskSubtitleVariant(task)?.transcript);
+  }
+
+  function taskHasSubtitle(task) {
+    if (!task || task.type !== "audio") return false;
+    const expectedFileName = subtitleFileName(task.fileName);
+    return state.tasks.some((item) => item.id !== task.id
+      && item.type === "text"
+      && item.fileName === expectedFileName
+      && item.directory === task.directory);
+  }
+
+  function canDownloadTaskSubtitle(task) {
+    return Boolean(task
+      && task.status === "completed"
+      && task.type === "audio"
+      && taskSubtitleContent(task)
+      && !taskHasSubtitle(task));
+  }
+
   function taskActions(task) {
     const button = (action, iconName, title, danger = false) => `
       <button class="icon-button task-action${danger ? " button-danger-ghost" : ""}" type="button" data-task-action="${action}" data-task-id="${escapeHTML(task.id)}" aria-label="${title}" title="${title}">${icon(iconName)}</button>`;
@@ -1339,7 +1374,12 @@
     if (task.status === "queued") return button("cancel", "stop", "取消", true);
     if (task.status === "paused") return button("resume", "play", "继续") + button("cancel", "stop", "取消", true);
     if (task.status === "failed") return button("retry", "retry", "重试") + button("remove", "trash", "移除", true);
-    if (task.status === "completed") return button("open", "folder", "打开所在文件夹") + button("remove", "trash", "移除");
+    if (task.status === "completed") {
+      const subtitleButton = canDownloadTaskSubtitle(task)
+        ? button("download-subtitle", "file-text", "下载字幕")
+        : "";
+      return button("open", "folder", "打开所在文件夹") + subtitleButton + button("remove", "trash", "移除");
+    }
     if (task.status === "cancelled") return button("retry", "retry", "重新下载") + button("remove", "trash", "移除");
     return button("remove", "trash", "移除");
   }
@@ -1455,6 +1495,37 @@
       <button class="button button-ghost button-compact" type="button" data-batch-page="next" data-batch-id="${escapeHTML(batch.id)}" ${state.taskPage >= pageCount ? "disabled" : ""}>下一页</button>`;
   }
 
+  function closeTaskContextMenu() {
+    elements.taskContextMenu.hidden = true;
+    elements.taskContextMenu.innerHTML = "";
+  }
+
+  function openTaskContextMenu(task, clientX, clientY) {
+    if (!task || task.status !== "completed" || task.type !== "audio") return;
+    const canDownload = canDownloadTaskSubtitle(task);
+    const hasSubtitle = taskHasSubtitle(task);
+    const menuLabel = canDownload ? "下载字幕" : (hasSubtitle ? "字幕已在任务列表中" : "无法下载字幕");
+    const menuNote = hasSubtitle
+      ? "对应字幕任务已经存在。"
+      : (taskSubtitleContent(task)
+        ? "将使用当前页面中的台词补下载字幕。"
+        : "此历史任务未保存台词文本，请先打开对应页面。");
+    elements.taskContextMenu.innerHTML = `
+      <button type="button" role="menuitem" data-task-context-action="download-subtitle" data-task-id="${escapeHTML(task.id)}"${canDownload ? "" : " disabled"}>
+        ${icon("file-text")}<span>${menuLabel}</span>
+      </button>
+      ${canDownload ? "" : `<p class="task-context-note">${menuNote}</p>`}`;
+    elements.taskContextMenu.hidden = false;
+    elements.taskContextMenu.style.left = "0px";
+    elements.taskContextMenu.style.top = "0px";
+    const rect = elements.taskContextMenu.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(clientX, window.innerWidth - rect.width - margin));
+    const top = Math.max(margin, Math.min(clientY, window.innerHeight - rect.height - margin));
+    elements.taskContextMenu.style.left = `${left}px`;
+    elements.taskContextMenu.style.top = `${top}px`;
+  }
+
   function renderTasks() {
     const focusedTaskControl = captureTaskControlFocus();
     const allTasks = [...state.tasks];
@@ -1494,6 +1565,18 @@
   async function runTaskAction(action, id, button) {
     const task = state.taskById.get(id);
     if (!task || !state.api) return;
+    if (action === "download-subtitle" && !task.content) {
+      const variant = taskSubtitleVariant(task);
+      if (variant) {
+        queueDownloads([variant], {
+          textOnly: true,
+          button,
+          directory: task.directory,
+          roleName: "",
+        });
+      }
+      return;
+    }
     const methods = {
       pause: "PauseTask",
       resume: "ResumeTask",
@@ -1501,6 +1584,7 @@
       cancel: "CancelTask",
       remove: "RemoveTask",
       open: "OpenTaskFolder",
+      "download-subtitle": "DownloadTaskSubtitle",
     };
     const method = methods[action];
     if (!method || typeof state.api[method] !== "function") return;
@@ -1509,6 +1593,9 @@
     try {
       const result = await state.api[method](id);
       if (result && typeof result === "object") upsertTask(result);
+      if (action === "download-subtitle") {
+        showToast("已创建字幕下载任务", "字幕会保存到对应音频的同一文件夹。", "success");
+      }
 	  // 后端事件可能比命令返回更快；只在尚未收到新状态时做乐观更新。
 	  if (task.status === startingStatus) {
 		if (action === "pause") task.status = "paused";
@@ -1525,7 +1612,7 @@
       }
       renderTasks();
     } catch (error) {
-      const labels = { pause: "暂停", resume: "继续", retry: "重试", cancel: "取消", remove: "移除", open: "打开文件夹" };
+      const labels = { pause: "暂停", resume: "继续", retry: "重试", cancel: "取消", remove: "移除", open: "打开文件夹", "download-subtitle": "下载字幕" };
       showToast(`${labels[action] || "操作"}失败`, displayText(error?.message || error, "请稍后重试。"), "error");
     } finally {
       if (button.isConnected) button.disabled = false;
@@ -1691,6 +1778,11 @@
       button: elements.batchDownloadButton,
       clearSelection: true,
     }));
+    elements.batchSubtitleDownloadButton.addEventListener("click", () => queueDownloads([...state.selected.values()], {
+      textOnly: true,
+      button: elements.batchSubtitleDownloadButton,
+      clearSelection: true,
+    }));
 
     elements.includeSubtitlesCheckbox.addEventListener("change", () => {
       state.includeSubtitles = elements.includeSubtitlesCheckbox.checked;
@@ -1737,6 +1829,35 @@
       const button = event.target.closest("[data-task-action]");
       if (button) runTaskAction(button.dataset.taskAction, button.dataset.taskId, button);
     });
+    elements.taskPanel.addEventListener("contextmenu", (event) => {
+      const card = event.target.closest("[data-task-card]");
+      if (!card) return;
+      const task = state.taskById.get(card.dataset.taskCard);
+      if (!task || task.status !== "completed" || task.type !== "audio") return;
+      event.preventDefault();
+      openTaskContextMenu(task, event.clientX, event.clientY);
+    });
+    elements.taskContextMenu.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-task-context-action]");
+      if (!button || button.disabled) return;
+      const action = button.dataset.taskContextAction;
+      const id = button.dataset.taskId;
+      const task = state.taskById.get(id);
+      closeTaskContextMenu();
+      if (action === "download-subtitle" && task && !task.content) {
+        const variant = taskSubtitleVariant(task);
+        if (variant) {
+          queueDownloads([variant], {
+            textOnly: true,
+            button,
+            directory: task.directory,
+            roleName: "",
+          });
+          return;
+        }
+      }
+      runTaskAction(action, id, button);
+    });
 
     elements.taskDrawerTrigger.addEventListener("click", () => toggleDrawer());
     elements.closeTaskDrawer.addEventListener("click", () => toggleDrawer(false));
@@ -1748,6 +1869,7 @@
       const insideScenePicker = eventPath.includes(elements.scenePicker) || elements.scenePicker.contains(event.target);
       if (state.languageMenuOpen && !insideLanguagePicker) toggleLanguageMenu(false);
       if (state.sceneMenuOpen && !insideScenePicker) toggleSceneMenu(false);
+      if (!elements.taskContextMenu.contains(event.target)) closeTaskContextMenu();
     });
     document.addEventListener("keydown", (event) => {
 	  if (event.key === "Tab" && state.drawerOpen && window.matchMedia("(max-width: 1120px)").matches) {
@@ -1765,6 +1887,11 @@
 		}
       }
       if (event.key === "Escape") {
+        if (!elements.taskContextMenu.hidden) {
+          event.preventDefault();
+          closeTaskContextMenu();
+          return;
+        }
         if (state.languageMenuOpen) {
           event.preventDefault();
           toggleLanguageMenu(false);
@@ -1786,6 +1913,7 @@
       }
     });
     window.addEventListener("resize", () => {
+      closeTaskContextMenu();
       if (!window.matchMedia("(max-width: 1120px)").matches && state.drawerOpen) toggleDrawer(false);
 	  else syncDrawerAccessibility();
     });
@@ -1893,6 +2021,7 @@
         title: ["初次见面，很高兴认识你", "准备出发", "关于音乐", "战斗胜利"][index % 4],
         category: index % 2 ? "对局" : "宿舍",
         fileName: `米雪儿语音-${String(index + 1).padStart(3, "0")}.mp3`,
+        content: index % 3 === 2 ? "" : "这是预览模式中的示例台词。",
         languageName: ["中文", "日语", "英语"][index % 3],
         status,
         downloadedBytes: Math.round(totalBytes * ratios[status]),
@@ -1934,6 +2063,20 @@
       async CancelTask() {},
       async RemoveTask() {},
       async ClearCompletedTasks() {},
+      async DownloadTaskSubtitle(id) {
+        const source = tasks.find((task) => task.id === id);
+        if (!source?.content) throw new Error("此历史任务未保存台词文本。");
+        return {
+          ...source,
+          id: `preview-subtitle-${Date.now()}`,
+          type: "text",
+          fileName: subtitleFileName(source.fileName),
+          content: source.content,
+          status: "queued",
+          downloadedBytes: 0,
+          totalBytes: source.content.length,
+        };
+      },
       async OpenTaskFolder() { showToast("预览模式", "在桌面应用中会打开文件所在目录。", "info"); },
     };
   }
