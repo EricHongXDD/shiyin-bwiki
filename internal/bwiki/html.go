@@ -385,9 +385,12 @@ func compactEntries(entries []Entry) []Entry {
 // cleanEntryTitle 去除 BWIKI 条目标题末尾混入的触发标记。
 func cleanEntryTitle(value string) string {
 	title := cleanTextValue(value)
-	if index := strings.LastIndexAny(title, " \t"); index > 0 {
+	for index, character := range title {
+		if character != ' ' && character != '\t' {
+			continue
+		}
 		suffix := strings.TrimSpace(title[index:])
-		if strings.HasSuffix(suffix, "触发") {
+		if strings.Contains(suffix, "触发") {
 			return strings.TrimSpace(title[:index])
 		}
 	}
