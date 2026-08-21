@@ -1540,6 +1540,24 @@ input:focus-visible + .custom-check {
 .batch-count-failed { color: #bd3c4f; background: var(--danger-soft); }
 .batch-count-paused { color: #795019; background: var(--warning-soft); }
 
+.batch-actions {
+  display: flex;
+  margin-top: 9px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.batch-actions .button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.batch-action-note {
+  color: var(--text-tertiary);
+  font-size: 9px;
+}
+
 .batch-detail-heading {
   display: grid;
   padding: 12px 0 10px;

@@ -24,7 +24,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.2.0-dev"
+var appVersion = "1.2.1-dev"
 
 // App 是前端可调用的应用服务边界。
 type App struct {
