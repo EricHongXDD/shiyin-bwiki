@@ -21,6 +21,12 @@
     taskOrder: 0,
     downloadDirectory: "",
     includeSubtitles: true,
+    view: "download",
+    settings: { downloadConcurrency: 4, autoCheckUpdates: true },
+    currentVersion: "",
+    updateInfo: null,
+    updateChecking: false,
+    updateError: "",
     currentAudio: null,
     currentAudioKey: "",
     audioLoadingKey: "",
@@ -52,6 +58,11 @@
   function displayText(value, fallback = "") {
     const text = String(value ?? "").trim();
     return text || fallback;
+  }
+
+  function cleanEntryTitle(value) {
+    const text = displayText(value);
+    return text.replace(/\s+([^\s]*触发)$/u, "").trim() || text;
   }
 
   function sceneKey(value) {
@@ -234,6 +245,9 @@
       "chooseDirectoryButton", "taskOverview", "taskBatchView", "taskList", "taskDetailView", "taskContextMenu", "batchBackButton",
       "batchDetailTitle", "batchDetailMeta", "taskStatusFilters", "batchTaskList", "taskPagination",
       "drawerScrim", "bridgeBanner", "toastRegion",
+      "downloadView", "settingsView", "downloadTabButton", "settingsTabButton",
+      "concurrencyInput", "saveSettingsButton", "settingsSaveStatus", "autoUpdateCheckbox",
+      "currentVersionValue", "checkUpdateButton", "downloadUpdateButton", "updateStatus",
     ].forEach((id) => { elements[id] = byId(id); });
   }
 
@@ -266,11 +280,11 @@
           language,
           languageName: displayText(variant.languageName, language === "unknown" ? "未知语言" : language),
           transcript: displayText(variant.transcript),
-          fileName: displayText(variant.fileName, `${displayText(entry.title, "语音")}-${language}.mp3`),
+          fileName: displayText(variant.fileName, `${cleanEntryTitle(entry.title) || "语音"}-${language}.mp3`),
           url: displayText(variant.url),
           _key: `${entryIndex}:${variantIndex}:${variantId}`,
           _entryId: entryId,
-          _entryTitle: displayText(entry.title, `语音 ${entryIndex + 1}`),
+          _entryTitle: cleanEntryTitle(entry.title) || `语音 ${entryIndex + 1}`,
           _category: displayText(entry.category),
           _entryIndex: entryIndex,
           _variantIndex: variantIndex,
@@ -279,7 +293,7 @@
       return {
         id: entryId,
         category: displayText(entry.category),
-        title: displayText(entry.title, `语音 ${entryIndex + 1}`),
+        title: cleanEntryTitle(entry.title) || `语音 ${entryIndex + 1}`,
         variants,
         _index: entryIndex,
       };
@@ -1693,7 +1707,128 @@
     window.setTimeout(close, duration);
   }
 
+  function formatVersionLabel(value) {
+    const text = displayText(value);
+    return text ? `v${text.replace(/^v/i, "")}` : "未知版本";
+  }
+
+  function renderUpdateState() {
+    elements.currentVersionValue.textContent = formatVersionLabel(state.currentVersion);
+    elements.downloadUpdateButton.hidden = !state.updateInfo?.updateAvailable || !state.updateInfo?.downloadUrl;
+    if (state.updateInfo?.updateAvailable) {
+      elements.updateStatus.className = "update-status is-available";
+      elements.updateStatus.textContent = `发现新版本 ${formatVersionLabel(state.updateInfo.latestVersion)}，点击“下载新版本”获取安装包。`;
+    } else if (state.updateError) {
+      elements.updateStatus.className = "update-status is-error";
+      elements.updateStatus.textContent = state.updateError;
+    } else if (state.updateChecking) {
+      elements.updateStatus.className = "update-status";
+      elements.updateStatus.textContent = "正在检查 GitHub Release…";
+    } else if (state.updateInfo) {
+      elements.updateStatus.className = "update-status";
+      elements.updateStatus.textContent = `当前已是最新版本 ${formatVersionLabel(state.updateInfo.latestVersion)}。`;
+    } else {
+      elements.updateStatus.className = "update-status";
+      elements.updateStatus.textContent = "尚未检查更新。";
+    }
+  }
+
+  function renderSettings() {
+    const concurrency = Number(state.settings.downloadConcurrency) || 4;
+    elements.concurrencyInput.value = String(concurrency);
+    elements.autoUpdateCheckbox.checked = state.settings.autoCheckUpdates !== false;
+    renderUpdateState();
+  }
+
+  function setActiveView(view) {
+    const next = view === "settings" ? "settings" : "download";
+    state.view = next;
+    elements.downloadView.hidden = next !== "download";
+    elements.settingsView.hidden = next !== "settings";
+    document.querySelectorAll("[data-view-tab]").forEach((button) => {
+      const active = button.dataset.viewTab === next;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    if (next === "settings") {
+      toggleDrawer(false);
+      renderSettings();
+    }
+  }
+
+  async function saveSettings() {
+    if (!state.api?.SaveSettings) return;
+    const downloadConcurrency = Number(elements.concurrencyInput.value);
+    if (!Number.isInteger(downloadConcurrency) || downloadConcurrency < 1 || downloadConcurrency > 32) {
+      showToast("设置无效", "下载并发数必须是 1 到 32 之间的整数。", "warning");
+      return;
+    }
+    elements.saveSettingsButton.disabled = true;
+    try {
+      const result = await state.api.SaveSettings({
+        downloadConcurrency,
+        autoCheckUpdates: elements.autoUpdateCheckbox.checked,
+      });
+      state.settings = {
+        downloadConcurrency: Number(result?.downloadConcurrency) || downloadConcurrency,
+        autoCheckUpdates: result?.autoCheckUpdates !== false,
+      };
+      elements.settingsSaveStatus.textContent = "已保存并立即生效";
+      showToast("设置已保存", `当前同时下载 ${state.settings.downloadConcurrency} 个文件。`, "success");
+      renderSettings();
+      window.setTimeout(() => { if (elements.settingsSaveStatus) elements.settingsSaveStatus.textContent = ""; }, 2600);
+    } catch (error) {
+      showToast("保存设置失败", displayText(error?.message || error, "无法应用下载并发设置。"), "error");
+    } finally {
+      elements.saveSettingsButton.disabled = false;
+    }
+  }
+
+  async function checkForUpdates(silent = false) {
+    if (!state.api?.CheckForUpdates || state.updateChecking) return;
+    state.updateChecking = true;
+    state.updateError = "";
+    renderUpdateState();
+    elements.checkUpdateButton.disabled = true;
+    try {
+      state.updateInfo = await state.api.CheckForUpdates();
+      if (!silent && state.updateInfo?.updateAvailable) {
+        showToast("发现新版本", `${formatVersionLabel(state.updateInfo.latestVersion)} 已发布，可在设置页下载。`, "success");
+      } else if (!silent) {
+        showToast("已是最新版本", `当前版本 ${formatVersionLabel(state.currentVersion)} 无需更新。`, "info");
+      }
+    } catch (error) {
+      state.updateInfo = null;
+      state.updateError = displayText(error?.message || error, "检查 GitHub 更新失败，请稍后重试。");
+      if (!silent) showToast("检查更新失败", state.updateError, "error");
+    } finally {
+      state.updateChecking = false;
+      elements.checkUpdateButton.disabled = false;
+      renderUpdateState();
+    }
+  }
+
+  async function openUpdateDownload() {
+    const url = state.updateInfo?.downloadUrl || state.updateInfo?.releaseUrl;
+    if (!url || !state.api?.OpenExternalURL) return;
+    try {
+      await state.api.OpenExternalURL(url);
+    } catch (error) {
+      showToast("打开下载失败", displayText(error?.message || error, "无法打开 GitHub 下载链接。"), "error");
+    }
+  }
+
   function bindEvents() {
+    document.querySelectorAll("[data-view-tab]").forEach((button) => {
+      button.addEventListener("click", () => setActiveView(button.dataset.viewTab));
+    });
+    elements.saveSettingsButton.addEventListener("click", saveSettings);
+    elements.checkUpdateButton.addEventListener("click", () => checkForUpdates(false));
+    elements.downloadUpdateButton.addEventListener("click", openUpdateDownload);
+    elements.autoUpdateCheckbox.addEventListener("change", () => {
+      state.settings.autoCheckUpdates = elements.autoUpdateCheckbox.checked;
+    });
+
     elements.urlForm.addEventListener("submit", (event) => {
       event.preventDefault();
       parsePage(elements.urlInput.value);
@@ -1976,11 +2111,18 @@
     try {
       const bootstrap = await state.api.GetBootstrap();
       state.downloadDirectory = displayText(bootstrap?.downloadDirectory);
+      state.currentVersion = displayText(bootstrap?.version);
+      const rawSettings = bootstrap?.settings || {};
+      state.settings = {
+        downloadConcurrency: Number(rawSettings.downloadConcurrency) || 4,
+        autoCheckUpdates: rawSettings.autoCheckUpdates !== false,
+      };
       state.tasks = [];
       state.taskById.clear();
       unwrapTasks(bootstrap?.tasks || []).forEach((task) => upsertTask(task, false));
       if (bootstrap?.version) elements.versionBadge.textContent = `v${String(bootstrap.version).replace(/^v/i, "")}`;
       renderDirectory();
+      renderSettings();
       renderTasks();
     } catch (error) {
       showToast("初始化失败", displayText(error?.message || error, "无法读取应用配置。"), "error", 5200);
@@ -2130,6 +2272,9 @@
         };
       },
       async OpenTaskFolder() { showToast("预览模式", "在桌面应用中会打开文件所在目录。", "info"); },
+      async SaveSettings(request) { return { downloadConcurrency: Number(request?.downloadConcurrency) || 4, autoCheckUpdates: request?.autoCheckUpdates !== false }; },
+      async CheckForUpdates() { return { currentVersion: "1.0.0-preview", latestVersion: "1.0.0-preview", updateAvailable: false, releaseUrl: "", downloadUrl: "" }; },
+      async OpenExternalURL() { showToast("预览模式", "桌面应用中会打开 GitHub 下载链接。", "info"); },
     };
   }
 
@@ -2147,6 +2292,10 @@
     if (!state.api) return;
     await loadBootstrap();
     subscribeTaskEvents();
+    setActiveView("download");
+    if (state.settings.autoCheckUpdates) {
+      window.setTimeout(() => checkForUpdates(true), 900);
+    }
 
     if (PREVIEW_MODE) {
       document.body.classList.add("preview-mode");

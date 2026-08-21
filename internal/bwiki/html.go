@@ -373,13 +373,25 @@ func compactEntries(entries []Entry) []Entry {
 			continue
 		}
 		entry.Section = cleanTextValue(entry.Section)
-		entry.Title = cleanTextValue(entry.Title)
+		entry.Title = cleanEntryTitle(entry.Title)
 		if entry.Title == "" {
 			entry.Title = entry.Audios[0].FileName
 		}
 		result = append(result, entry)
 	}
 	return result
+}
+
+// cleanEntryTitle 去除 BWIKI 条目标题末尾混入的触发标记。
+func cleanEntryTitle(value string) string {
+	title := cleanTextValue(value)
+	if index := strings.LastIndexAny(title, " \t"); index > 0 {
+		suffix := strings.TrimSpace(title[index:])
+		if strings.HasSuffix(suffix, "触发") {
+			return strings.TrimSpace(title[:index])
+		}
+	}
+	return title
 }
 
 func collectLanguages(entries []Entry) []Language {

@@ -59,6 +59,14 @@ func TestRowspanTitleSurvivesInvalidFirstAudio(t *testing.T) {
 	}
 }
 
+func TestTriggerSuffixIsRemovedFromEntryTitle(t *testing.T) {
+	t.Parallel()
+	page := parseRegressionPage(t, `<table><tr><th>别慌，我知道治愈魔法正确的使用方法 救治忧雾触发</th><td><audio src="https://i0.hdslb.com/cure.mp3"></audio></td><td>别慌，我知道治愈魔法正确的使用方法</td></tr></table>`)
+	if len(page.Entries) != 1 || page.Entries[0].Title != "别慌，我知道治愈魔法正确的使用方法" {
+		t.Fatalf("触发后缀未清理：%#v", page.Entries)
+	}
+}
+
 func parseRegressionPage(t *testing.T, markup string) Page {
 	t.Helper()
 	target, err := ParseURL(samplePageURL)

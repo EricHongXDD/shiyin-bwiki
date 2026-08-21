@@ -118,3 +118,35 @@ func TestRoleNameFromTitle(t *testing.T) {
 		})
 	}
 }
+
+func TestAppSettingsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	want := AppSettings{DownloadConcurrency: 12, AutoCheckUpdates: false}
+	if err := saveAppSettings(path, want); err != nil {
+		t.Fatalf("saveAppSettings() error = %v", err)
+	}
+	got, err := loadAppSettings(path)
+	if err != nil {
+		t.Fatalf("loadAppSettings() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("设置往返 = %#v，期望 %#v", got, want)
+	}
+}
+
+func TestReleaseVersionComparison(t *testing.T) {
+	tests := []struct {
+		left  string
+		right string
+		want  int
+	}{
+		{left: "v1.3.0", right: "1.2.1-dev", want: 1},
+		{left: "1.2.1", right: "v1.2.1", want: 0},
+		{left: "1.2.0", right: "1.2.1", want: -1},
+	}
+	for _, test := range tests {
+		if got := compareReleaseVersions(test.left, test.right); got != test.want {
+			t.Fatalf("compareReleaseVersions(%q, %q) = %d，期望 %d", test.left, test.right, got, test.want)
+		}
+	}
+}

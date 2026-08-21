@@ -37,6 +37,7 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.4 15 .1.1a2 2 0 0 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.2a2 2 0 0 1-4 0v-.2a2 2 0 0 0-3.4-1.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 1.6 12 2 2 0 0 1 3.4 8.6l.1.1A2 2 0 0 0 6.9 7.3v-.2a2 2 0 0 1 4 0v.2a2 2 0 0 0 3.4 1.4l.1-.1A2 2 0 1 1 17.2 11l-.1.1a2 2 0 0 0 2.3 3.9Z"/></symbol>
     <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a1 1 0 0 1-1-1Zm16 0h-3v6h2a1 1 0 0 0 1-1Z"/></symbol>
   </svg>
 
@@ -49,6 +50,10 @@
           <span>BWIKI 语音下载器</span>
         </span>
       </a>
+      <nav class="view-tabs" aria-label="主导航" role="tablist">
+        <button class="view-tab is-active" id="downloadTabButton" type="button" role="tab" aria-selected="true" data-view-tab="download">下载</button>
+        <button class="view-tab" id="settingsTabButton" type="button" role="tab" aria-selected="false" data-view-tab="settings">设置</button>
+      </nav>
       <div class="header-actions">
         <span class="version-badge" id="versionBadge">本地应用</span>
         <button class="button button-secondary task-drawer-trigger" id="taskDrawerTrigger" type="button" aria-controls="taskPanel" aria-expanded="false">
@@ -60,6 +65,7 @@
     </header>
 
     <main class="app-main">
+      <div class="app-view" id="downloadView">
       <section class="source-panel surface">
         <div class="source-heading">
           <div>
@@ -219,6 +225,39 @@
           <div class="task-context-menu" id="taskContextMenu" role="menu" hidden></div>
         </aside>
       </div>
+      </div>
+      <section class="settings-view surface" id="settingsView" aria-labelledby="settingsTitle" hidden>
+        <div class="settings-heading">
+          <div>
+            <span class="eyebrow"><svg aria-hidden="true"><use href="#i-settings"></use></svg> 应用设置</span>
+            <h2 id="settingsTitle">设置</h2>
+            <p>调整下载速度，并检查 GitHub 上是否有新的拾音版本。</p>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <section class="settings-card" aria-labelledby="downloadSettingsTitle">
+            <div class="settings-card-head">
+              <span class="settings-icon"><svg aria-hidden="true"><use href="#i-download"></use></svg></span>
+              <div><h3 id="downloadSettingsTitle">下载设置</h3><p>并发数越高，通常下载越快，但也会增加网络和磁盘占用。</p></div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-copy"><strong>下载并发数</strong><span>同时下载的文件数量，支持 1 到 32 个。</span></div>
+              <label class="number-control" for="concurrencyInput"><input id="concurrencyInput" type="number" min="1" max="32" step="1" inputmode="numeric"><span>个</span></label>
+            </div>
+            <div class="settings-footer"><button class="button button-primary button-compact" id="saveSettingsButton" type="button">保存设置</button><span class="settings-save-status" id="settingsSaveStatus" role="status"></span></div>
+          </section>
+          <section class="settings-card" aria-labelledby="updateSettingsTitle">
+            <div class="settings-card-head">
+              <span class="settings-icon update-icon"><svg aria-hidden="true"><use href="#i-spark"></use></svg></span>
+              <div><h3 id="updateSettingsTitle">自动更新</h3><p>启动时自动检查 GitHub Release，也可以手动检查。</p></div>
+            </div>
+            <div class="settings-info-row"><span>当前版本</span><strong id="currentVersionValue">检查中</strong></div>
+            <label class="check-control update-check-control"><input id="autoUpdateCheckbox" type="checkbox" checked><span class="custom-check" aria-hidden="true"></span><span>启动时自动检查更新</span></label>
+            <div class="update-actions"><button class="button button-ghost button-compact" id="checkUpdateButton" type="button">检查更新</button><button class="button button-primary button-compact" id="downloadUpdateButton" type="button" hidden>下载新版本</button></div>
+            <p class="update-status" id="updateStatus" role="status" aria-live="polite">尚未检查更新。</p>
+          </section>
+        </div>
+      </section>
     </main>
   </div>
 
