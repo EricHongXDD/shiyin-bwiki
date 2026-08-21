@@ -24,7 +24,7 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var appVersion = "1.1.0-dev"
+var appVersion = "1.2.0-dev"
 
 // App 是前端可调用的应用服务边界。
 type App struct {
@@ -265,6 +265,10 @@ func (a *App) ResumeTask(id string) error {
 
 func (a *App) RetryTask(id string) error {
 	return a.downloads.Retry(id)
+}
+
+func (a *App) DownloadTaskSubtitle(id string) (download.Task, error) {
+	return a.downloads.AddSubtitleTask(id)
 }
 
 func (a *App) CancelTask(id string) error {

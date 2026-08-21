@@ -136,3 +136,51 @@ func TestTextTaskWritesUTF8IntoSubdirectory(t *testing.T) {
 		t.Fatalf("字幕临时文件未清理：err=%v", err)
 	}
 }
+func TestAddSubtitleTaskForCompletedAudio(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte("voice"))
+	}))
+	defer server.Close()
+
+	directory := t.TempDir()
+	manager := newTestManager(t, Config{StatePath: filepath.Join(directory, "state.json"), Concurrency: 1})
+	defer manager.Close()
+
+	voice, err := manager.Add(NewTask{
+		SourceID:     "voice-022",
+		Title:        "你好，明。",
+		Category:     "日常",
+		Language:     "zh-CN",
+		LanguageName: "中文",
+		FileName:     "明语音-022CN.mp3",
+		URL:          server.URL,
+		Directory:    directory,
+		Content:      "你好，明。",
+	})
+	if err != nil {
+		t.Fatalf("音频 Add() error = %v", err)
+	}
+	waitTaskStatus(t, manager, voice.ID, StatusCompleted)
+
+	subtitle, err := manager.AddSubtitleTask(voice.ID)
+	if err != nil {
+		t.Fatalf("AddSubtitleTask() error = %v", err)
+	}
+	if subtitle.Type != TaskTypeText || subtitle.FileName != "明语音-022CN.txt" {
+		t.Fatalf("字幕任务 = %#v", subtitle)
+	}
+	if subtitle.Directory != voice.Directory {
+		t.Fatalf("字幕目录 = %q，期望与音频目录 %q 一致", subtitle.Directory, voice.Directory)
+	}
+	waitTaskStatus(t, manager, subtitle.ID, StatusCompleted)
+	data, err := os.ReadFile(subtitle.OutputPath)
+	if err != nil {
+		t.Fatalf("读取补下载字幕失败：%v", err)
+	}
+	if string(data) != voice.Content {
+		t.Fatalf("字幕内容 = %q，期望 %q", string(data), voice.Content)
+	}
+	if _, err := manager.AddSubtitleTask(voice.ID); err == nil {
+		t.Fatal("重复补下载字幕未返回错误")
+	}
+}

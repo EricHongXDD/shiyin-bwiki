@@ -9,7 +9,7 @@ on:
       version:
         description: Version used by this build-only validation run
         required: true
-        default: "1.1.0"
+        default: "1.2.0"
 
 permissions:
   contents: read
@@ -94,26 +94,47 @@ jobs:
             throw "Unexpected ProductName: $($metadata.ProductName)"
           }
 
-      - name: Package portable archive
+      - name: Install Inno Setup
         shell: pwsh
         run: |
-          $archiveName = "Shiyin-$env:RELEASE_TAG-windows-amd64"
-          $packageRoot = Join-Path $env:RUNNER_TEMP $archiveName
-          New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
-          Copy-Item -LiteralPath "build\bin\Shiyin.exe" -Destination $packageRoot
-          Copy-Item -LiteralPath "README.md" -Destination $packageRoot
-          Copy-Item -LiteralPath "LICENSE" -Destination $packageRoot
+          $isccCandidates = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress --limit-output
+            $iscc = $isccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) {
+            throw "Inno Setup compiler was not found"
+          }
+          "INNO_SETUP_COMPILER=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Package Windows installer
+        shell: pwsh
+        run: |
           New-Item -ItemType Directory -Path "dist" -Force | Out-Null
-          Compress-Archive -Path "$packageRoot\*" -DestinationPath "dist\$archiveName.zip" -CompressionLevel Optimal
-          if ((Get-Item -LiteralPath "dist\$archiveName.zip").Length -lt 1MB) {
-            throw "Windows archive is unexpectedly small"
+          Push-Location "packaging\windows"
+          try {
+            & $env:INNO_SETUP_COMPILER "/DMyAppVersion=$env:VERSION" "Shiyin.iss"
+          } finally {
+            Pop-Location
+          }
+          $installer = "dist\Shiyin-$env:RELEASE_TAG-windows-amd64-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer)) {
+            throw "Windows installer was not generated: $installer"
+          }
+          if ((Get-Item -LiteralPath $installer).Length -lt 1MB) {
+            throw "Windows installer is unexpectedly small"
           }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
           name: platform-windows
-          path: dist/*.zip
+          path: dist/*-setup.exe
           if-no-files-found: error
           compression-level: 0
           overwrite: true
@@ -268,18 +289,17 @@ jobs:
       - name: Validate archives and checksums
         shell: bash
         run: |
-          windows="dist/Shiyin-$RELEASE_TAG-windows-amd64.zip"
+          windows="dist/Shiyin-$RELEASE_TAG-windows-amd64-setup.exe"
           macos="dist/Shiyin-$RELEASE_TAG-macos-universal.zip"
           linux="dist/Shiyin-$RELEASE_TAG-linux-amd64.tar.gz"
           test -s "$windows"
           test -s "$macos"
           test -s "$linux"
-          unzip -t "$windows"
           unzip -t "$macos"
           tar -tzf "$linux" >/dev/null
           cd dist
           sha256sum \
-            "Shiyin-$RELEASE_TAG-windows-amd64.zip" \
+            "Shiyin-$RELEASE_TAG-windows-amd64-setup.exe" \
             "Shiyin-$RELEASE_TAG-macos-universal.zip" \
             "Shiyin-$RELEASE_TAG-linux-amd64.tar.gz" \
             > SHA256SUMS.txt
@@ -338,7 +358,7 @@ jobs:
             printf '%s\n' "SHA256SUMS.txt"
             printf '%s\n' "Shiyin-$RELEASE_TAG-linux-amd64.tar.gz"
             printf '%s\n' "Shiyin-$RELEASE_TAG-macos-universal.zip"
-            printf '%s\n' "Shiyin-$RELEASE_TAG-windows-amd64.zip"
+            printf '%s\n' "Shiyin-$RELEASE_TAG-windows-amd64-setup.exe"
           } | sort)"
           actual="$(gh release view "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \

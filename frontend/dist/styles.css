@@ -955,6 +955,58 @@ input:focus-visible + .custom-check {
   color: var(--warning);
 }
 
+.task-context-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 178px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(35, 49, 79, 0.18);
+}
+
+.task-context-menu button {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  padding: 0 9px;
+  gap: 8px;
+  color: #354159;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.task-context-menu button:not(:disabled):hover,
+.task-context-menu button:not(:disabled):focus-visible {
+  outline: none;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.task-context-menu button:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.task-context-menu svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.task-context-note {
+  margin: 4px 8px 5px;
+  color: var(--text-tertiary);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
 .content-state:empty,
 .voice-list:empty {
   display: none;
@@ -2032,6 +2084,10 @@ input:focus-visible + .custom-check {
 
   .selection-summary .button-primary {
     margin-left: auto;
+  }
+
+  .selection-summary .button-ghost {
+    margin-left: 0;
   }
 
   .voice-card-head {

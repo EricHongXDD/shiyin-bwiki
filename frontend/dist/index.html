@@ -148,6 +148,10 @@
                 <svg aria-hidden="true"><use href="#i-download"></use></svg>
                 <span id="batchDownloadLabel">下载所选</span>
               </button>
+              <button class="button button-ghost button-compact" id="batchSubtitleDownloadButton" type="button" disabled>
+                <svg aria-hidden="true"><use href="#i-file-text"></use></svg>
+                <span id="batchSubtitleDownloadLabel">仅下载字幕</span>
+              </button>
             </div>
           </div>
 
@@ -212,6 +216,7 @@
             <div class="task-list batch-task-list" id="batchTaskList"></div>
             <div class="task-pagination" id="taskPagination" hidden></div>
           </section>
+          <div class="task-context-menu" id="taskContextMenu" role="menu" hidden></div>
         </aside>
       </div>
     </main>
